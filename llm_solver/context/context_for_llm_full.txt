@@ -335,6 +335,7 @@ Optimization: Maximization with penalty for exceeding capacity
 #include <vector>
 #include <memory>
 #include <iostream>
+#include <iomanip>
 #include <cuda_runtime.h>
 
 // Forward declaration of GPU kernel
@@ -550,6 +551,7 @@ Optimization: Minimization (makespan = max machine load)
 #include <memory>
 #include <algorithm>
 #include <iostream>
+#include <iomanip>
 #include <cuda_runtime.h>
 
 // Forward declaration of GPU kernel
@@ -757,6 +759,7 @@ Optimization: Minimization (optimal = 0)
 #include <vector>
 #include <memory>
 #include <iostream>
+#include <iomanip>
 #include <cmath>
 #include <cuda_runtime.h>
 
