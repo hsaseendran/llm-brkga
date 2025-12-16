@@ -1042,265 +1042,57 @@ CRITICAL DECISION RULE:
 LOCAL SEARCH INTEGRATION (HYBRID GENETIC ALGORITHM)
 ================================================================================
 
-The framework provides OPTIONAL local search to improve solution quality. Local
-search applies problem-specific improvement moves to elite individuals.
-
-INCLUDE PATH FOR LOCAL SEARCH:
-#include "../../brkga/core/local_search.hpp"
-
-This is the CORRECT path - same directory as config.hpp.
+LOCAL SEARCH IS OPTIONAL - SKIP IT FOR SIMPLE PROBLEMS
+-------------------------------------------------------
+For most problems, GPU evaluation alone provides excellent performance.
+Only implement local search for complex routing/scheduling problems where
+it provides significant benefit.
 
 WHEN TO USE LOCAL SEARCH:
 -------------------------
-✅ Routing problems (TSP, VRP) → 2-opt, 3-opt, Or-opt
-✅ Scheduling problems → shift, swap, insert moves
-✅ Packing/selection (Knapsack) → add/swap item moves
-✅ Assignment problems → swap assignments
+✅ Routing problems (TSP, VRP) → 2-opt improvements
+✅ Scheduling problems → swap/shift moves
 ❌ Continuous optimization (Sphere, Rastrigin) → Not beneficial
-❌ Very large problems (>10000 variables) → Too slow
+❌ Simple problems → GPU evaluation is sufficient
+❌ First implementation → Get basic solver working first
 
-LOCAL SEARCH ARCHITECTURE:
---------------------------
-1. LocalSearch<T> - Abstract base class for improvement operators
-2. LocalSearchManager<T> - Orchestrates multiple local search algorithms
-3. LocalSearchConfig<T> - Controls when and how local search is applied
-
-STRATEGIES (LocalSearchStrategy enum):
-- DISABLED: No local search (default)
-- BEST_ONLY: Apply only to best individual
-- ELITE_ONLY: Apply to all elite individuals (recommended)
-- RANDOM_SAMPLE: Apply to random 10% of population
-- ALL_INDIVIDUALS: Apply to entire population (expensive!)
-- STAGNATION_ONLY: Apply only when improvement stalls
-- ADAPTIVE: Increase frequency when stagnating
-
-TIMING (LocalSearchTiming enum):
-- POST_EVALUATION: After fitness evaluation (most common)
-- END_GENERATION: End of each generation
-- FINAL_POLISH: Only at the very end (for intensive final improvement)
-
-LOCAL SEARCH CONFIGURATION PATTERN:
------------------------------------
+LOCAL SEARCH API IN BRKGAConfig:
+--------------------------------
+To enable local search, override these methods in your config class:
 
 ```cpp
-// In your config constructor, AFTER setting fitness/decoder/comparator:
+// 1. Indicate that local search is available
+bool has_local_search() const override {
+    return true;
+}
 
-void add_local_searches() {
-    // 1. Create your problem-specific local search operator
-    auto my_local_search = std::make_unique<MyLocalSearch>(problem_data);
-    this->add_local_search(std::move(my_local_search));
-
-    // 2. Configure local search behavior
-    LocalSearchConfig<T> ls_config;
-    ls_config.strategy = LocalSearchStrategy::ELITE_ONLY;  // Apply to elite
-    ls_config.frequency = 5;           // Every 5 generations
-    ls_config.probability = 0.8;       // 80% chance of application
-    ls_config.apply_to_best = true;    // Always apply to best solution
-    this->set_local_search_config(ls_config);
+// 2. Implement GPU-based local search
+int apply_local_search_gpu(
+    T* d_population,           // Population on GPU
+    T* d_backup,               // Backup buffer for restoration
+    T* d_fitness,              // Fitness values
+    T* d_fitness_backup,       // Backup fitness for comparison
+    void* d_rng_states,        // curandState* for random numbers
+    int pop_size,              // Population size
+    int chrom_len,             // Chromosome length
+    int num_to_improve,        // Number of individuals to apply LS to
+    int num_moves              // Number of moves per individual
+) override {
+    // Implement your local search logic here
+    // Return number of improvements found
+    return 0;
 }
 ```
 
-IMPLEMENTING A LOCAL SEARCH OPERATOR:
--------------------------------------
+IMPORTANT: Do NOT use add_local_search() or set_local_search_config() -
+these methods do not exist in the base class. Use the override pattern above.
 
-Local search operators inherit from LocalSearch<T> and implement:
-- improve(): Main improvement logic
-- should_apply(): Whether to apply (usually return true, manager handles timing)
-- configure(): Parameter parsing
-- clone(): Factory method
-
-COMPLETE EXAMPLE - 2-OPT FOR TSP:
----------------------------------
-
-```cpp
-class TwoOptTSP : public LocalSearch<T> {
-private:
-    const std::vector<std::vector<T>>& distance_matrix;
-    int num_cities;
-
-public:
-    TwoOptTSP(const std::vector<std::vector<T>>& distances, int cities)
-        : LocalSearch<T>("TSP-2opt"), distance_matrix(distances), num_cities(cities) {}
-
-    Individual<T> improve(const Individual<T>& individual) override {
-        Individual<T> best = individual;
-        auto tour = decode_tour(individual);
-
-        bool improved = true;
-        int iterations = 0;
-
-        while (improved && iterations < this->max_iterations) {
-            improved = false;
-
-            // 2-opt: try reversing segments
-            for (int i = 0; i < num_cities - 1 && !improved; i++) {
-                for (int j = i + 2; j < num_cities && !improved; j++) {
-                    // Calculate improvement from edge swap
-                    T old_dist = distance_matrix[tour[i]][tour[i+1]] +
-                                 distance_matrix[tour[j]][tour[(j+1) % num_cities]];
-                    T new_dist = distance_matrix[tour[i]][tour[j]] +
-                                 distance_matrix[tour[i+1]][tour[(j+1) % num_cities]];
-
-                    if (new_dist < old_dist - this->improvement_threshold) {
-                        std::reverse(tour.begin() + i + 1, tour.begin() + j + 1);
-                        T new_fitness = calculate_tour_length(tour);
-                        if (new_fitness < best.fitness) {
-                            best.set_fitness(new_fitness);
-                            improved = true;
-                        }
-                    }
-                }
-            }
-            iterations++;
-        }
-
-        if (best.fitness < individual.fitness) {
-            encode_tour(best, tour);
-        }
-        return best;
-    }
-
-    bool should_apply(int generation, const Individual<T>& individual,
-                     const std::vector<Individual<T>>& population) override {
-        return true;  // Manager handles timing
-    }
-
-    void configure(const std::map<std::string, std::string>& params) override {
-        this->parse_basic_config(params);
-    }
-
-    LocalSearch<T>* clone() const override {
-        return new TwoOptTSP(distance_matrix, num_cities);
-    }
-
-private:
-    // Helper: decode chromosome to tour
-    std::vector<int> decode_tour(const Individual<T>& individual) {
-        const auto& chromosome = individual.get_chromosome();
-        std::vector<std::pair<T, int>> keyed;
-        for (int i = 0; i < num_cities; i++) {
-            keyed.emplace_back(chromosome[i], i);
-        }
-        std::sort(keyed.begin(), keyed.end());
-        std::vector<int> tour;
-        for (const auto& p : keyed) tour.push_back(p.second);
-        return tour;
-    }
-
-    // Helper: encode tour back to chromosome
-    void encode_tour(Individual<T>& ind, const std::vector<int>& tour) {
-        auto& chromosome = ind.get_component(0);
-        for (int i = 0; i < num_cities; i++) {
-            chromosome[tour[i]] = static_cast<T>(i) / num_cities;
-        }
-        ind.reset_evaluation();
-    }
-
-    T calculate_tour_length(const std::vector<int>& tour) {
-        T total = 0;
-        for (int i = 0; i < num_cities; i++) {
-            total += distance_matrix[tour[i]][tour[(i+1) % num_cities]];
-        }
-        return total;
-    }
-};
-```
-
-COMPLETE EXAMPLE - SWAP FOR KNAPSACK (MAXIMIZATION):
-----------------------------------------------------
-
-```cpp
-class SwapKnapsack : public LocalSearch<T> {
-private:
-    const std::vector<T>& weights;
-    const std::vector<T>& values;
-    T capacity;
-
-public:
-    SwapKnapsack(const std::vector<T>& w, const std::vector<T>& v, T cap)
-        : LocalSearch<T>("Knapsack-Swap"), weights(w), values(v), capacity(cap) {}
-
-    Individual<T> improve(const Individual<T>& individual) override {
-        Individual<T> best = individual;
-        std::vector<bool> selection(weights.size());
-
-        // Decode current selection
-        const auto& chromosome = individual.get_chromosome();
-        T current_weight = 0, current_value = 0;
-        for (size_t i = 0; i < selection.size(); i++) {
-            selection[i] = chromosome[i] > 0.5;
-            if (selection[i]) {
-                current_weight += weights[i];
-                current_value += values[i];
-            }
-        }
-
-        bool improved = true;
-        while (improved && iterations < this->max_iterations) {
-            improved = false;
-
-            // Try adding unselected items
-            for (size_t i = 0; i < selection.size() && !improved; i++) {
-                if (!selection[i] && current_weight + weights[i] <= capacity) {
-                    selection[i] = true;
-                    current_weight += weights[i];
-                    current_value += values[i];
-                    improved = true;
-                }
-            }
-
-            // Try swapping: remove one, add another
-            if (!improved) {
-                for (size_t i = 0; i < selection.size() && !improved; i++) {
-                    if (selection[i]) {
-                        for (size_t j = 0; j < selection.size() && !improved; j++) {
-                            if (!selection[j] && i != j) {
-                                T new_weight = current_weight - weights[i] + weights[j];
-                                T new_value = current_value - values[i] + values[j];
-                                if (new_weight <= capacity && new_value > current_value) {
-                                    selection[i] = false;
-                                    selection[j] = true;
-                                    current_weight = new_weight;
-                                    current_value = new_value;
-                                    improved = true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if (current_value > best.fitness) {
-            encode_selection(best, selection);
-            best.set_fitness(current_value);
-        }
-        return best;
-    }
-
-    // ... implement should_apply, configure, clone as above ...
-
-protected:
-    bool is_better(T f1, T f2) const override {
-        return f1 > f2;  // MAXIMIZATION!
-    }
-};
-```
-
-LOCAL SEARCH CONFIGURATION RECOMMENDATIONS:
--------------------------------------------
-| Problem Type | Operator        | Strategy    | Frequency |
-|--------------|-----------------|-------------|-----------|
-| TSP/VRP      | 2-opt, 3-opt    | ELITE_ONLY  | 5         |
-| Knapsack     | Add/Swap        | BEST_ONLY   | 10        |
-| Scheduling   | Shift/Swap      | ELITE_ONLY  | 5         |
-| Assignment   | Exchange        | ELITE_ONLY  | 10        |
-
-IMPORTANT NOTES:
-- Local search runs on CPU (not GPU accelerated)
-- Comparator is automatically inherited from config
-- Statistics are automatically tracked and reported
-- For maximization problems, override is_better() to return f1 > f2
+RECOMMENDATION FOR GENERATED CODE:
+----------------------------------
+Unless explicitly requested, DO NOT implement local search.
+The basic GPU fitness evaluation provides good results for most problems.
+If user asks for local search, implement it by overriding has_local_search()
+and apply_local_search_gpu() as shown in the CORRECT LOCAL SEARCH API section above.
 
 ================================================================================
 KEY REQUIREMENTS SUMMARY
@@ -1353,12 +1145,12 @@ KEY REQUIREMENTS SUMMARY
     - Always check: if (idx >= pop_size) return;
     - Use simple operations compatible with CUDA
 
-11. LOCAL SEARCH (OPTIONAL BUT RECOMMENDED):
-    - Include local search for routing, scheduling, packing problems
-    - Create problem-specific LocalSearch<T> subclass
-    - Call add_local_searches() in constructor after GPU setup
-    - Configure with appropriate strategy (ELITE_ONLY recommended)
+11. LOCAL SEARCH (OPTIONAL - ONLY IF USER REQUESTS):
+    - Override has_local_search() to return true
+    - Override apply_local_search_gpu() with GPU-based local search logic
+    - DO NOT use add_local_search() or set_local_search_config() - they don't exist
     - Skip for continuous optimization (Sphere, Rastrigin, etc.)
+    - Unless explicitly requested, DO NOT implement local search
 
 ================================================================================
 END OF CONTEXT PACKAGE
