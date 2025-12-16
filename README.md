@@ -21,8 +21,10 @@ llm_brkga/
 │   ├── core/               # LLM interaction and code generation
 │   ├── context/            # Problem context management
 │   └── generated/          # Auto-generated solver code
-├── docs/                   # Technical documentation
-└── data/                   # Sample data files
+├── web_app.py              # Flask web interface
+├── static/                 # Web frontend assets (CSS, JS)
+├── templates/              # HTML templates
+└── docs/                   # Technical documentation
 ```
 
 ## Quick Start
@@ -41,12 +43,22 @@ cd brkga
 make
 ```
 
-### Run LLM Solver
+### Run LLM Solver (CLI)
 
 ```bash
 export ANTHROPIC_API_KEY="your-api-key"
 python llm_solver/interactive.py
 ```
+
+### Run Web Interface
+
+```bash
+export ANTHROPIC_API_KEY="your-api-key"
+pip install -r requirements_web.txt
+python web_app.py
+```
+
+Then open http://localhost:5000 in your browser.
 
 ## Components
 
@@ -69,6 +81,14 @@ Natural language interface for optimization:
 - Automatic compilation and execution
 
 See [llm_solver/README.md](llm_solver/README.md) for usage guide.
+
+### Web Interface
+
+Browser-based interface for the LLM solver:
+- Upload problem data files
+- Configure BRKGA parameters via UI
+- Real-time optimization progress
+- Download solutions
 
 ## Documentation
 

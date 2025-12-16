@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM BRKGA Solver - Web Interface</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>LLM BRKGA Solver</h1>
+            <p class="subtitle">Describe your optimization problem and get a working solver</p>
+        </header>
+
+        <!-- Step 1: Problem Description -->
+        <section id="step-1" class="step active">
+            <div class="step-header">
+                <span class="step-number">1</span>
+                <h2>Describe Your Problem</h2>
+            </div>
+            <div class="step-content">
+                <div class="info-box">
+                    <h3>Examples:</h3>
+                    <ul>
+                        <li><strong>TSP:</strong> "I want to travel to all cities starting from city 1 and then get back to city 1. I want to visit each city exactly once optimally"</li>
+                        <li><strong>Knapsack:</strong> "Select items to maximize value without exceeding capacity"</li>
+                        <li><strong>Scheduling:</strong> "Assign tasks to machines to minimize makespan"</li>
+                    </ul>
+                </div>
+                <textarea id="problem-description" rows="6" placeholder="Enter your optimization problem description here..."></textarea>
+                <button id="analyze-btn" class="btn btn-primary">Analyze Problem</button>
+            </div>
+        </section>
+
+        <!-- Step 2: Clarifying Questions -->
+        <section id="step-2" class="step">
+            <div class="step-header">
+                <span class="step-number">2</span>
+                <h2>Answer Clarifying Questions</h2>
+            </div>
+            <div class="step-content">
+                <div id="questions-container"></div>
+                <button id="skip-questions-btn" class="btn btn-secondary" style="display: none;">Skip to Data File</button>
+            </div>
+        </section>
+
+        <!-- Step 3: BRKGA Hyperparameters (Optional) -->
+        <section id="step-3" class="step">
+            <div class="step-header">
+                <span class="step-number">3</span>
+                <h2>BRKGA Hyperparameters (Optional)</h2>
+            </div>
+            <div class="step-content">
+                <div class="info-box">
+                    <h3>Customize Algorithm Parameters</h3>
+                    <p>Leave blank to use auto-estimated values based on your problem</p>
+                </div>
+
+                <div class="hyperparams-grid">
+                    <div class="param-group">
+                        <label for="population-size">Population Size</label>
+                        <input type="number" id="population-size" placeholder="Auto" min="10" max="10000">
+                        <small>Number of candidate solutions (default: auto-estimated)</small>
+                    </div>
+
+                    <div class="param-group">
+                        <label for="elite-percentage">Elite Percentage</label>
+                        <input type="number" id="elite-percentage" placeholder="0.15" min="0" max="1" step="0.01">
+                        <small>Percentage of best solutions kept (0.0-1.0, default: 0.15)</small>
+                    </div>
+
+                    <div class="param-group">
+                        <label for="mutant-percentage">Mutant Percentage</label>
+                        <input type="number" id="mutant-percentage" placeholder="0.15" min="0" max="1" step="0.01">
+                        <small>Percentage of random solutions (0.0-1.0, default: 0.15)</small>
+                    </div>
+
+                    <div class="param-group">
+                        <label for="elite-prob">Elite Bias</label>
+                        <input type="number" id="elite-prob" placeholder="0.7" min="0" max="1" step="0.01">
+                        <small>Bias towards elite parent (0.0-1.0, default: 0.7)</small>
+                    </div>
+
+                    <div class="param-group">
+                        <label for="max-generations">Max Generations</label>
+                        <input type="number" id="max-generations" placeholder="Auto" min="10" max="100000">
+                        <small>Maximum evolution iterations (default: auto-estimated)</small>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button id="skip-hyperparams-btn" class="btn btn-secondary">Use Defaults</button>
+                    <button id="apply-hyperparams-btn" class="btn btn-primary">Apply Custom Values</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Step 4: Data File Upload (Optional) -->
+        <section id="step-4" class="step">
+            <div class="step-header">
+                <span class="step-number">4</span>
+                <h2>Upload Data Files (Optional)</h2>
+            </div>
+            <div class="step-content">
+                <div class="info-box">
+                    <h3>Multiple File Support</h3>
+                    <p>Some problems (like TSP) may require multiple data files. You can upload up to 10 files and give each a descriptive name.</p>
+                </div>
+                <div class="upload-area" id="upload-area">
+                    <div class="upload-icon">📁</div>
+                    <p>Drag and drop your data file here or click to browse</p>
+                    <p class="info-text">Supports all file types (.txt, .csv, .tsp, .ttp, .vrp, .dat, etc.)</p>
+                    <input type="file" id="file-input" hidden>
+                    <button id="browse-btn" class="btn btn-secondary">Choose File</button>
+                </div>
+                <div id="files-list" class="files-list">
+                    <!-- Uploaded files will appear here -->
+                </div>
+
+                <!-- File Mapping Interface (shows when multiple files uploaded) -->
+                <div id="file-mapping-section" class="file-mapping" style="display: none;">
+                    <h3>Map Files to Parameters</h3>
+                    <p class="info-text">Please specify which file corresponds to each parameter:</p>
+                    <div id="mapping-controls">
+                        <!-- Mapping dropdowns will be inserted here -->
+                    </div>
+                    <button id="confirm-mapping-btn" class="btn btn-primary">Confirm Mapping</button>
+                </div>
+
+                <div class="button-group">
+                    <button id="skip-file-btn" class="btn btn-secondary">Skip Data Files</button>
+                    <button id="proceed-solve-btn" class="btn btn-primary" style="display: none;">Proceed to Solve</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Step 5: Solving -->
+        <section id="step-5" class="step">
+            <div class="step-header">
+                <span class="step-number">5</span>
+                <h2>Generating & Running Solver</h2>
+            </div>
+            <div class="step-content">
+                <div class="progress-container">
+                    <div class="progress-stage">
+                        <h3 id="progress-stage-name">Initializing...</h3>
+                        <div class="progress-bar">
+                            <div id="progress-fill" class="progress-fill"></div>
+                        </div>
+                        <p id="progress-message" class="progress-message"></p>
+                    </div>
+                </div>
+
+                <!-- Analysis Results Widget -->
+                <div id="analysis-widget" class="info-widget" style="display: none;">
+                    <div class="widget-header">
+                        <h3>Problem Analysis</h3>
+                    </div>
+                    <div id="analysis-content" class="widget-content">
+                        <!-- Analysis results will be inserted here -->
+                    </div>
+                </div>
+
+                <!-- Code Generation Widget -->
+                <div id="code-widget" class="info-widget" style="display: none;">
+                    <div class="widget-header">
+                        <h3>Generated Solver Code</h3>
+                        <button id="expand-code-btn" class="btn-small">Expand</button>
+                    </div>
+                    <div id="code-content" class="widget-content code-preview" style="max-height: 300px; overflow-y: auto;">
+                        <!-- Generated code will be inserted here -->
+                    </div>
+                </div>
+
+                <!-- Convergence Graph Widget -->
+                <div id="convergence-widget" class="info-widget" style="display: none;">
+                    <div class="widget-header">
+                        <h3>Convergence Graph</h3>
+                    </div>
+                    <div id="convergence-content" class="widget-content">
+                        <canvas id="convergence-chart"></canvas>
+                    </div>
+                </div>
+
+                <div class="log-container">
+                    <h3>Activity Log</h3>
+                    <div id="log-output" class="log-output"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Step 6: Results -->
+        <section id="step-6" class="step">
+            <div class="step-header">
+                <span class="step-number">6</span>
+                <h2>Results</h2>
+            </div>
+            <div class="step-content">
+                <div id="results-container">
+                    <div id="result-summary" class="result-box"></div>
+
+                    <!-- Analysis Results in Results Page -->
+                    <div id="results-analysis-widget" class="info-widget" style="display: none;">
+                        <div class="widget-header">
+                            <h3>Problem Analysis</h3>
+                        </div>
+                        <div id="results-analysis-content" class="widget-content">
+                            <!-- Analysis results will be inserted here -->
+                        </div>
+                    </div>
+
+                    <!-- Convergence Graph in Results Page -->
+                    <div id="results-convergence-widget" class="info-widget" style="display: none;">
+                        <div class="widget-header">
+                            <h3>Convergence History</h3>
+                        </div>
+                        <div id="results-convergence-content" class="widget-content">
+                            <canvas id="results-convergence-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <div id="solution-preview" class="solution-preview" style="display: none;">
+                        <h3>Solution Preview</h3>
+                        <div id="solution-content" class="code-preview"></div>
+                        <div class="button-group">
+                            <button id="export-btn" class="btn btn-primary">Export Solution</button>
+                            <button id="copy-solution-btn" class="btn btn-secondary">Copy to Clipboard</button>
+                        </div>
+                    </div>
+
+                    <div class="button-group">
+                        <button id="new-problem-btn" class="btn btn-success">Solve New Problem</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p id="loading-text">Processing...</p>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

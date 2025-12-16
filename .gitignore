@@ -619,21 +619,17 @@ WEB_INTERFACE_WALKTHROUGH.md
 WEB_UI_HYPERPARAMETERS.md
 ZDT1_CONFIG_COMPARISON.md
 
-# Web app files (not core to BRKGA)
-web_app.py
-static/
-templates/
-start_web.sh
-requirements_web.txt
+# Web app uploads (user data)
+uploads/
 
 # Test and debug scripts
 test_*.py
 debug_*.py
 clean_and_test.sh
 
-# Presentations and PDFs
-*.html
-*.pdf
+# Presentations and PDFs (root level only)
+/*.html
+/*.pdf
 
 # Test CUDA files in root
 test_*.cu
