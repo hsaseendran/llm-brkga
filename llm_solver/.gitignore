@@ -1,0 +1,372 @@
+# ============================================================================
+# LLM Solver .gitignore
+# Place this file in the llm_solver/ directory
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Generated C++ Configurations (TEMPORARY)
+# ----------------------------------------------------------------------------
+# All generated config files are temporary and should not be committed
+generated/*.hpp
+generated/*.cu
+generated/*.h
+generated/*_config.hpp
+generated/*_refined.hpp
+
+# Generated executables
+generated/*_solver
+generated/*.out
+generated/*.exe
+
+# Generated object files
+generated/*.o
+generated/*.obj
+
+# Keep the directory structure
+!generated/
+!generated/.gitkeep
+!generated/README.md
+
+# ----------------------------------------------------------------------------
+# Results & Output Files (TEMPORARY)
+# ----------------------------------------------------------------------------
+# All optimization results are temporary
+results/*.txt
+results/*.json
+results/*.csv
+results/*.log
+results/*.sol
+results/*.solution
+results/*.result
+
+# Pareto fronts
+results/pareto_*.csv
+results/pareto_*.txt
+
+# Convergence data
+results/convergence_*.csv
+results/history_*.txt
+
+# Keep the directory structure
+!results/
+!results/.gitkeep
+!results/README.md
+
+# Keep example results for documentation
+!results/example_*.txt
+!results/example_*.json
+
+# ----------------------------------------------------------------------------
+# Data Files (TEMPORARY)
+# ----------------------------------------------------------------------------
+# Generated test data
+data/*.dat
+data/*.txt
+data/*.tsp
+data/*.vrp
+data/*.json
+data/*.csv
+
+# Keep the directory structure
+!data/
+!data/.gitkeep
+!data/README.md
+
+# Keep small example data
+!data/small_*.dat
+!data/test_*.dat
+!data/example_*.dat
+
+# ----------------------------------------------------------------------------
+# Python Cache & Compiled Files
+# ----------------------------------------------------------------------------
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+
+# Cache directories
+.cache/
+*.cache/
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+
+# ----------------------------------------------------------------------------
+# Logs & Debug Files
+# ----------------------------------------------------------------------------
+# All log files
+*.log
+llm_solver.log
+debug.log
+error.log
+validation.log
+compilation.log
+
+# Debug output
+debug_*.txt
+trace_*.txt
+
+# Profiling output
+*.prof
+profile.txt
+profile_*.txt
+
+# ----------------------------------------------------------------------------
+# Temporary Files
+# ----------------------------------------------------------------------------
+# General temporary files
+*.tmp
+*.temp
+*~
+*.bak
+*.backup
+*.swp
+*.swo
+
+# Temporary solver files
+temp_*.hpp
+temp_*.cu
+temp_solver_*
+
+# Intermediate compilation files
+*.i
+*.ii
+*.s
+*.bc
+
+# ----------------------------------------------------------------------------
+# API Keys & Credentials (CRITICAL!)
+# ----------------------------------------------------------------------------
+# Never commit API keys!
+.env
+.env.local
+.env.production
+api_key.txt
+.api_key
+anthropic_key.txt
+*.key
+secrets.txt
+.secrets
+credentials.json
+.credentials
+
+# Config files with secrets (use config.yaml.template instead)
+config.yaml.secret
+config.local.yaml
+
+# ----------------------------------------------------------------------------
+# IDE & Editor Files
+# ----------------------------------------------------------------------------
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm / IntelliJ
+.idea/
+*.iml
+
+# Sublime
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+.*.sw[a-z]
+
+# Emacs
+*~
+\#*\#
+
+# ----------------------------------------------------------------------------
+# OS Files
+# ----------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Linux
+.directory
+*~
+
+# ----------------------------------------------------------------------------
+# Testing & Coverage
+# ----------------------------------------------------------------------------
+# Test results
+test_results/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Test outputs
+test_output_*.txt
+test_generated_*.hpp
+
+# ----------------------------------------------------------------------------
+# Documentation Build
+# ----------------------------------------------------------------------------
+# Sphinx
+_build/
+docs/_build/
+
+# ----------------------------------------------------------------------------
+# Virtual Environments
+# ----------------------------------------------------------------------------
+# Python virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Conda environments
+.conda/
+
+# ----------------------------------------------------------------------------
+# Package Manager Files
+# ----------------------------------------------------------------------------
+# Don't commit lock files (may vary by developer)
+# Uncomment if your team agrees:
+# Pipfile.lock
+# poetry.lock
+# requirements.lock
+
+# ----------------------------------------------------------------------------
+# Jupyter Notebooks
+# ----------------------------------------------------------------------------
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Notebook outputs (if any analysis notebooks)
+*-checkpoint.ipynb
+
+# ----------------------------------------------------------------------------
+# Benchmarking & Experiments
+# ----------------------------------------------------------------------------
+# Benchmark results (usually regenerated)
+benchmarks/*.result
+benchmarks/temp_*
+
+# Experiment outputs
+experiments/*/generated/
+experiments/*/results/
+experiments/temp/
+
+# ----------------------------------------------------------------------------
+# Model Artifacts (if using ML components)
+# ----------------------------------------------------------------------------
+# Trained models
+models/*.pkl
+models/*.h5
+models/*.pt
+models/*.pth
+
+# Model checkpoints
+checkpoints/
+*.ckpt
+
+# ----------------------------------------------------------------------------
+# Visualization Files
+# ----------------------------------------------------------------------------
+# Generated plots
+plots/*.png
+plots/*.pdf
+plots/*.svg
+
+# Keep example plots
+!plots/example_*.png
+
+# Animation files
+*.gif
+*.mp4
+*.avi
+
+# ----------------------------------------------------------------------------
+# Large Files
+# ----------------------------------------------------------------------------
+# Large datasets
+large_*.dat
+huge_*.dat
+dataset_*.tar.gz
+
+# Large result files
+results_large_*.json
+solutions_large_*.txt
+
+# ----------------------------------------------------------------------------
+# Cache & Optimization
+# ----------------------------------------------------------------------------
+# Solver cache
+.solver_cache/
+compiled_cache/
+
+# LLM response cache (if implemented)
+.llm_cache/
+response_cache/
+
+# ----------------------------------------------------------------------------
+# Configuration Backups
+# ----------------------------------------------------------------------------
+# Backup config files
+config.yaml.bak
+config.yaml.old
+*.yaml.backup
+
+# ----------------------------------------------------------------------------
+# Project Specific Ignores
+# ----------------------------------------------------------------------------
+# Add your custom patterns here
+
+# Example: Ignore specific problem instances
+# problems/proprietary_*.txt
+
+# Example: Ignore customer data
+# data/customer_*/
+
+# ----------------------------------------------------------------------------
+# IMPORTANT: Files to ALWAYS KEEP
+# ----------------------------------------------------------------------------
+# Make sure these are NOT ignored
+!core/
+!core/*.py
+!core/__init__.py
+!*.md
+!README.md
+!requirements.txt
+!config.yaml.template
+!demo.py
+!examples.py
+!.gitignore
+!.gitkeep
+
+# ----------------------------------------------------------------------------
+# Context Files (Keep These!)
+# ----------------------------------------------------------------------------
+!context/
+!context/*.txt
+!context/*.md
+
+# ============================================================================
+# NOTES
+# ============================================================================
+#
+# 1. Generated configs are TEMPORARY - never commit them
+# 2. Results are TEMPORARY - never commit them  
+# 3. API keys are SECRETS - NEVER commit them
+# 4. Keep .gitkeep files to preserve directory structure
+# 5. Commit only source code and documentation
+# 6. Use config.yaml.template for config examples
+# 7. Update this file as your project evolves
+#
+# ============================================================================

@@ -1,0 +1,31 @@
+BRKGA Framework - Minimal Context
+
+CRITICAL RULES:
+1. Always use individual.get_chromosome() - never direct access
+2. Base class: BRKGAConfig<T>({chromosome_length})
+3. Lambdas: this->fitness_function = [this](const Individual<T>& ind) { ... };
+4. Const refs: const auto& chromosome = individual.get_chromosome();
+5. Reserve: vector.reserve(size) before filling
+6. Decoder returns: std::vector<std::vector<T>>
+7. Comparator: [](T a, T b) { return a < b; } for min, a > b for max
+
+
+TEMPLATE:
+```cpp
+template<typename T>
+class MyConfig : public BRKGAConfig<T> {
+public:
+    MyConfig(params) : BRKGAConfig<T>({chrom_length}) {
+        this->fitness_function = [this](const Individual<T>& ind) {
+            const auto& chromosome = ind.get_chromosome();
+            // Calculate fitness
+        };
+        this->decoder = [this](const Individual<T>& ind) {
+            std::vector<std::vector<T>> result(1);
+            // Decode solution
+            return result;
+        };
+        this->comparator = [](T a, T b) { return a < b; };
+    }
+};
+```

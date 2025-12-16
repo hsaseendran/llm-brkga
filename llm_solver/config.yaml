@@ -1,0 +1,416 @@
+# ============================================================================
+# LLM BRKGA Solver - Configuration File
+# ============================================================================
+# This file configures the LLM-powered BRKGA solver system.
+# Place this file in the llm_solver/ directory.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# PATH CONFIGURATION
+# ----------------------------------------------------------------------------
+paths:
+  # Path to the BRKGA C++ framework (relative to llm_solver/ directory)
+  framework_path: "../brkga"
+  
+  # Path to core framework files
+  framework_core: "../brkga/core"
+  
+  # Path to example configurations
+  framework_configs: "../brkga/configs"
+  
+  # Directory for generated configuration files
+  generated_configs_dir: "generated"
+  
+  # Directory for optimization results
+  results_dir: "results"
+  
+  # Directory for temporary data files
+  data_dir: "data"
+  
+  # Directory containing BRKGA context for LLM
+  context_dir: "context"
+  
+  # Main context file for LLM
+  context_file_full: "context/context_for_llm_full.txt"
+  context_file_minimal: "context/context_for_llm_minimal.txt"
+
+# ----------------------------------------------------------------------------
+# COMPILER CONFIGURATION
+# ----------------------------------------------------------------------------
+compiler:
+  # NVCC compiler path
+  nvcc_path: "nvcc"
+  
+  # CUDA architecture (adjust based on your GPU)
+  # Common values: sm_60, sm_70, sm_75, sm_80, sm_86, sm_89, sm_90
+  cuda_arch: "sm_75"
+  
+  # C++ standard to use
+  cpp_standard: "c++17"
+  
+  # Optimization level (O0, O1, O2, O3)
+  optimization_level: "O3"
+  
+  # Additional compiler flags
+  extra_flags:
+    - "-Xcompiler"
+    - "-fopenmp"
+  
+  # Libraries to link
+  libraries:
+    - "curand"
+    - "cudart"
+    - "pthread"
+  
+  # Compilation timeout (seconds)
+  compilation_timeout: 120
+
+# ----------------------------------------------------------------------------
+# LLM CONFIGURATION
+# ----------------------------------------------------------------------------
+llm:
+  # Model to use for analysis and code generation
+  model: "claude-sonnet-4-5-20250929"
+  
+  # Temperature for problem analysis (0.0 - 1.0)
+  # Lower = more deterministic, Higher = more creative
+  analysis_temperature: 0.2
+  
+  # Temperature for code generation (0.0 - 1.0)
+  generation_temperature: 0.1
+  
+  # Maximum tokens for analysis
+  max_tokens_analysis: 4000
+  
+  # Maximum tokens for code generation
+  max_tokens_generation: 8000
+  
+  # Maximum tokens for refinement
+  max_tokens_refinement: 8000
+  
+  # API key (can also be set via ANTHROPIC_API_KEY environment variable)
+  # api_key: "your-key-here"  # Uncomment and set if not using env var
+
+# ----------------------------------------------------------------------------
+# SOLVER DEFAULTS
+# ----------------------------------------------------------------------------
+solver:
+  # Default population size
+  default_population: 100
+  
+  # Default number of generations
+  default_generations: 500
+  
+  # Default elite percentage
+  elite_percentage: 0.15
+  
+  # Default mutant percentage
+  mutant_percentage: 0.15
+  
+  # Default bias for crossover
+  bias: 0.7
+  
+  # Number of threads for parallel operations
+  num_threads: 4
+  
+  # Use GPU if available
+  use_gpu: true
+  
+  # Random seed (null for random seed)
+  random_seed: null
+
+# ----------------------------------------------------------------------------
+# VALIDATION CONFIGURATION
+# ----------------------------------------------------------------------------
+validation:
+  # Enable syntax validation
+  enable_syntax_check: true
+  
+  # Enable semantic validation
+  enable_semantic_check: true
+  
+  # Enable compilation test
+  enable_compilation_test: true
+  
+  # Enable quick execution test
+  enable_execution_test: true
+  
+  # Number of generations for quick test
+  quick_test_generations: 10
+  
+  # Timeout for quick test (seconds)
+  quick_test_timeout: 120
+
+# ----------------------------------------------------------------------------
+# REFINEMENT CONFIGURATION
+# ----------------------------------------------------------------------------
+refinement:
+  # Maximum number of refinement iterations
+  max_iterations: 3
+  
+  # Enable automatic refinement on errors
+  auto_refine: true
+  
+  # Save intermediate versions
+  save_intermediate: true
+  
+  # Verbose error reporting
+  verbose_errors: true
+
+# ----------------------------------------------------------------------------
+# EXECUTION CONFIGURATION
+# ----------------------------------------------------------------------------
+execution:
+  # Default timeout for full optimization (minutes)
+  # null = no timeout
+  default_timeout_minutes: 30
+  
+  # Number of independent runs
+  num_runs: 1
+  
+  # Save best solution
+  save_solution: true
+  
+  # Save convergence history
+  save_history: true
+  
+  # Export results format
+  result_format: "json"  # json, csv, txt
+  
+  # Verbosity level (0=quiet, 1=normal, 2=verbose, 3=debug)
+  verbosity: 1
+
+# ----------------------------------------------------------------------------
+# PROBLEM TYPE CONFIGURATION
+# ----------------------------------------------------------------------------
+problem_types:
+  # Configuration for different problem types
+  routing:
+    recommended_population: 200
+    recommended_generations: 1000
+    decoder_strategy: "sorted_index"
+  
+  packing:
+    recommended_population: 150
+    recommended_generations: 800
+    decoder_strategy: "threshold"
+  
+  scheduling:
+    recommended_population: 200
+    recommended_generations: 1200
+    decoder_strategy: "priority"
+  
+  assignment:
+    recommended_population: 150
+    recommended_generations: 800
+    decoder_strategy: "assignment"
+  
+  selection:
+    recommended_population: 100
+    recommended_generations: 500
+    decoder_strategy: "threshold"
+
+# ----------------------------------------------------------------------------
+# SCALE ESTIMATION
+# ----------------------------------------------------------------------------
+scale_estimation:
+  # Population size scaling based on chromosome length
+  population_scaling:
+    small: 100      # < 50 genes
+    medium: 200     # 50-200 genes
+    large: 300      # 200-500 genes
+    xlarge: 500     # > 500 genes
+  
+  # Generation count scaling based on complexity
+  generation_scaling:
+    simple: 500
+    moderate: 1000
+    complex: 1500
+  
+  # Evaluation speed estimate (evals per second)
+  evaluations_per_second: 1000
+  
+  # Multi-objective overhead multiplier
+  multi_objective_overhead: 1.5
+
+# ----------------------------------------------------------------------------
+# LOGGING CONFIGURATION
+# ----------------------------------------------------------------------------
+logging:
+  # Enable logging
+  enable: true
+  
+  # Log file location
+  log_file: "llm_solver.log"
+  
+  # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  log_level: "INFO"
+  
+  # Log format
+  log_format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # Rotate log files
+  rotate_logs: true
+  max_log_size_mb: 10
+  backup_count: 3
+
+# ----------------------------------------------------------------------------
+# OUTPUT CONFIGURATION
+# ----------------------------------------------------------------------------
+output:
+  # Print colored output
+  use_colors: true
+  
+  # Show progress bars
+  show_progress: true
+  
+  # Print intermediate results
+  print_intermediate: false
+  
+  # Save generated code with comments
+  include_code_comments: true
+  
+  # Generate visualization files
+  generate_visualizations: false
+  
+  # Export format for Pareto fronts (multi-objective)
+  pareto_export_format: "csv"
+
+# ----------------------------------------------------------------------------
+# ADVANCED SETTINGS
+# ----------------------------------------------------------------------------
+advanced:
+  # Enable experimental features
+  experimental_features: false
+  
+  # Use GPU kernels for fitness evaluation (if available)
+  gpu_fitness_evaluation: false
+  
+  # Enable hybrid local search
+  enable_local_search: false
+  
+  # Cache compiled solvers
+  cache_compiled_solvers: true
+  cache_dir: ".cache"
+  
+  # Enable profiling
+  enable_profiling: false
+  profiling_output: "profile.txt"
+  
+  # Memory limit (MB)
+  memory_limit_mb: 8192
+
+# ----------------------------------------------------------------------------
+# MULTI-OBJECTIVE CONFIGURATION
+# ----------------------------------------------------------------------------
+multi_objective:
+  # NSGA-II specific settings
+  nsga2:
+    # Crowding distance weight
+    crowding_distance_weight: 1.0
+    
+    # Diversity preservation
+    preserve_diversity: true
+    
+    # Maximum Pareto front size
+    max_pareto_size: 1000
+
+# ----------------------------------------------------------------------------
+# DATA FILE MANAGEMENT
+# ----------------------------------------------------------------------------
+data_files:
+  # Allow multiple data files per problem
+  # This enables problems that require multiple input files
+  # Example: scheduling with job_times.csv and travel_times.csv
+
+  # Maximum number of data files allowed per problem
+  max_files_per_problem: 10
+
+  # Supported file extensions
+  supported_formats:
+    - ".tsp"      # TSP format
+    - ".vrp"      # VRP format
+    - ".csv"      # Comma-separated values
+    - ".txt"      # Plain text
+    - ".dat"      # Generic data file
+    - ".json"     # JSON format
+
+  # Auto-detect file type
+  auto_detect_format: true
+
+  # Validate file existence on problem analysis
+  validate_existence: true
+
+# ----------------------------------------------------------------------------
+# DATA GENERATION
+# ----------------------------------------------------------------------------
+data_generation:
+  # Enable test data generation
+  generate_test_data: true
+
+  # Test data size (small, medium, large)
+  test_data_size: "small"
+
+  # Random seed for data generation
+  data_random_seed: 42
+
+  # Save generated data
+  save_generated_data: true
+
+# ----------------------------------------------------------------------------
+# ERROR HANDLING
+# ----------------------------------------------------------------------------
+error_handling:
+  # Continue on warnings
+  continue_on_warnings: true
+  
+  # Maximum warnings before stopping
+  max_warnings: 10
+  
+  # Retry on compilation errors
+  retry_on_compile_error: true
+  max_compile_retries: 2
+  
+  # Fallback to CPU if GPU fails
+  fallback_to_cpu: true
+
+# ----------------------------------------------------------------------------
+# PERFORMANCE TUNING
+# ----------------------------------------------------------------------------
+performance:
+  # Parallel compilation jobs
+  parallel_jobs: 4
+  
+  # Cache LLM responses
+  cache_llm_responses: false
+  
+  # Batch processing
+  enable_batch_processing: false
+  batch_size: 5
+
+# ----------------------------------------------------------------------------
+# COMPATIBILITY
+# ----------------------------------------------------------------------------
+compatibility:
+  # Minimum CUDA version required
+  min_cuda_version: "11.0"
+  
+  # Minimum Python version required
+  min_python_version: "3.8"
+  
+  # Check compatibility on startup
+  check_on_startup: true
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# 
+# 1. Paths are relative to the llm_solver/ directory
+# 2. Environment variables override config file settings
+# 3. Command-line arguments override both env vars and config
+# 4. ANTHROPIC_API_KEY must be set either here or as env variable
+# 5. Adjust cuda_arch based on your GPU architecture
+# 6. Higher populations and generations = better solutions but slower
+# 7. Enable experimental features at your own risk
+#
+# ============================================================================

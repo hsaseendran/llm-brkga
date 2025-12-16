@@ -1,0 +1,36 @@
+Traveling Salesman Problem - Berlin52
+
+I need to solve the classic Traveling Salesman Problem for 52 cities in Berlin.
+
+PROBLEM:
+- Visit all 52 cities exactly once
+- Return to the starting city
+- Minimize total travel distance
+
+DATA:
+- City coordinates are in: brkga/data/berlin52.tsp
+- File format:
+  * Lines 1-6: Header (NAME, COMMENT, TYPE, DIMENSION, EDGE_WEIGHT_TYPE, NODE_COORD_SECTION)
+  * Lines 7+: city_number x_coordinate y_coordinate
+  * Example: "1 565.0 575.0"
+
+DISTANCE CALCULATION:
+- Use Euclidean distance between cities
+- distance(i,j) = sqrt((x_i - x_j)^2 + (y_i - y_j)^2)
+
+OBJECTIVE:
+- Minimize total tour length
+- A tour is a permutation of cities [0, 1, 2, ..., 51]
+- The decoder should convert BRKGA random keys to a valid tour permutation
+
+SOLUTION FORMAT:
+- Tour: [city_0, city_1, city_2, ..., city_51, city_0]
+- Total distance: sum of distances between consecutive cities
+- The tour should visit each city exactly once
+
+REQUIREMENTS:
+- Load city coordinates from the file
+- Parse the TSPLIB format
+- Calculate pairwise distances
+- Use random-key decoder to create tour permutations
+- Validate that each city is visited exactly once

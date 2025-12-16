@@ -1,0 +1,1364 @@
+================================================================================
+BRKGA FRAMEWORK CONTEXT FOR CODE GENERATION
+================================================================================
+
+This document provides the essential patterns and requirements for generating
+BRKGA configuration files that will compile and work correctly with the framework.
+
+⚠️  READ THIS FIRST: MOST COMMON ERRORS TO AVOID ⚠️
+================================================================================
+
+These are the MOST FREQUENT compilation errors. Check your code for these FIRST:
+
+❌ ERROR 1: Trying to call chromosome_length() or validate after construction
+   WRONG:  if (chromosome_length() != expected) { }
+   WRONG:  if (get_chromosome_length() != expected) { }  // Method doesn't exist!
+   WRONG:  int len = get_chromosome_length();  // Method doesn't exist!
+
+   ✅ CORRECT: Set chromosome length at construction, don't validate later
+   ✅ CORRECT: BRKGAConfig<T>(num_cities + num_items)  // Just construct with right length
+
+   RULE: Chromosome length is SET at construction via BRKGAConfig<T>(length)
+   RULE: Don't try to validate or retrieve it later - it's already correct!
+
+❌ ERROR 2: Using `this->` when calling helper methods inside lambdas
+   WRONG:  return this->calculate_fitness(individual);
+   WRONG:  return this->decode_solution(individual);
+
+   ✅ CORRECT: return calculate_fitness(individual);
+   ✅ CORRECT: return decode_solution(individual);
+
+   RULE: NVCC cannot compile `this->method()` calls in lambdas
+
+❌ ERROR 3: Trying to access chromosome directly without get_chromosome()
+   WRONG:  for (auto gene : chromosome) { }  // chromosome undefined!
+   WRONG:  chromosome[i]  // Where did chromosome come from?
+
+   ✅ CORRECT: const auto& chromosome = individual.get_chromosome();
+   ✅ CORRECT: for (auto gene : chromosome) { }  // Now defined
+
+   RULE: ALWAYS get chromosome via individual.get_chromosome() first
+
+❌ ERROR 4: Wrong constructor signature
+   WRONG:  BRKGAConfig<T>(length, num_objectives, constraints)
+   WRONG:  BRKGAConfig<T>(length, 1, 0)
+
+   ✅ CORRECT: BRKGAConfig<T>(length)           // Single component
+   ✅ CORRECT: BRKGAConfig<T>({len1, len2})     // Multi-component
+
+   RULE: Constructor takes ONLY chromosome length(s), nothing else
+
+❌ ERROR 5: Wrong function parameter types
+   WRONG:  [this](const std::vector<T>& chromosome) -> T { }
+   WRONG:  [this](std::vector<T> chromosome) -> T { }
+
+   ✅ CORRECT: [this](const Individual<T>& individual) -> T { }
+
+   RULE: Fitness/decoder functions take Individual<T>&, not std::vector<T>&
+
+❌ ERROR 6: Missing GPU evaluation methods
+   WRONG:  Only implementing fitness_function (CPU only)
+
+   ✅ CORRECT: Implement BOTH:
+   - has_gpu_evaluation() that returns true if GPU is available
+   - evaluate_population_gpu() that calls CUDA kernel
+   - fitness_function as CPU fallback
+
+   RULE: Always provide GPU and CPU implementations
+
+================================================================================
+GPU FITNESS EVALUATION PATTERN (REQUIRED FOR UNIVERSAL SOLVER)
+================================================================================
+
+EVERY config MUST support BOTH GPU and CPU fitness evaluation:
+- GPU for performance (when available)
+- CPU as fallback (always works)
+
+COMPLETE PATTERN:
+-----------------
+
+#include <cuda_runtime.h>
+
+// Forward declaration of GPU kernel
+template<typename T>
+__global__ void your_fitness_kernel(T* population, T* fitness, T* problem_data,
+                                   int pop_size, int chrom_len);
+
+template<typename T>
+class YourConfig : public BRKGAConfig<T> {
+private:
+    // Problem data (CPU)
+    std::vector<T> problem_data;
+
+    // GPU-specific members
+    T* d_problem_data;              // Device memory pointer
+    bool gpu_memory_allocated;
+    bool gpu_available;
+
+public:
+    YourConfig(...)
+        : BRKGAConfig<T>(...),
+          d_problem_data(nullptr),
+          gpu_memory_allocated(false),
+          gpu_available(false) {
+
+        // 1. CPU FALLBACK (required, always works)
+        this->fitness_function = [this](const Individual<T>& individual) {
+            const auto& chromosome = individual.get_chromosome();
+            // Calculate fitness on CPU
+            T result = 0;
+            // ... your fitness logic ...
+            return result;
+        };
+
+        // 2. Decoder
+        this->decoder = [this](const Individual<T>& individual) {
+            const auto& chromosome = individual.get_chromosome();
+            std::vector<std::vector<T>> result(1);
+            // ... decode logic ...
+            return result;
+        };
+
+        // 3. Comparator
+        this->comparator = [](T a, T b) { return a < b; };  // or a > b for max
+
+        // 4. GPU setup
+        this->threads_per_block = 256;
+        this->update_cuda_grid_size();
+        check_gpu_availability();
+    }
+
+    ~YourConfig() {
+        cleanup_gpu_memory();
+    }
+
+    // GPU EVALUATION INTERFACE (required for GPU support)
+    bool has_gpu_evaluation() const override { return gpu_available; }
+
+    void evaluate_population_gpu(T* d_population, T* d_fitness,
+                                int pop_size, int chrom_len) override {
+        if (!gpu_available) return;  // Fallback to CPU
+
+        if (!gpu_memory_allocated) {
+            allocate_gpu_memory();
+        }
+
+        dim3 block(this->threads_per_block);
+        dim3 grid((pop_size + block.x - 1) / block.x);
+
+        your_fitness_kernel<<<grid, block>>>(
+            d_population, d_fitness, d_problem_data, pop_size, chrom_len
+        );
+
+        cudaError_t error = cudaDeviceSynchronize();
+        if (error != cudaSuccess) {
+            std::cout << "GPU kernel failed" << std::endl;
+        }
+    }
+
+private:
+    void check_gpu_availability() {
+        int device_count = 0;
+        cudaError_t error = cudaGetDeviceCount(&device_count);
+        gpu_available = (error == cudaSuccess && device_count > 0);
+    }
+
+    void allocate_gpu_memory() {
+        if (!gpu_available || gpu_memory_allocated) return;
+
+        size_t size = problem_data.size() * sizeof(T);
+        cudaError_t error = cudaMalloc(&d_problem_data, size);
+
+        if (error != cudaSuccess) {
+            gpu_available = false;
+            return;
+        }
+
+        error = cudaMemcpy(d_problem_data, problem_data.data(), size,
+                          cudaMemcpyHostToDevice);
+
+        if (error != cudaSuccess) {
+            cudaFree(d_problem_data);
+            gpu_available = false;
+            return;
+        }
+
+        gpu_memory_allocated = true;
+    }
+
+    void cleanup_gpu_memory() {
+        if (gpu_memory_allocated && d_problem_data) {
+            cudaFree(d_problem_data);
+            gpu_memory_allocated = false;
+            d_problem_data = nullptr;
+        }
+    }
+};
+
+// GPU KERNEL (place at end of file, after class definition)
+template<typename T>
+__global__ void your_fitness_kernel(T* population, T* fitness, T* problem_data,
+                                   int pop_size, int chrom_len) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= pop_size) return;
+
+    T* chromosome = population + idx * chrom_len;
+
+    // Calculate fitness for individual idx
+    T result = 0;
+    for (int i = 0; i < chrom_len; i++) {
+        // Your fitness calculation using chromosome[i] and problem_data
+        result += chromosome[i] * problem_data[i];
+    }
+
+    fitness[idx] = result;
+}
+
+KEY POINTS:
+-----------
+✅ GPU kernel: Each thread processes ONE individual
+✅ Thread index: idx = blockIdx.x * blockDim.x + threadIdx.x
+✅ Always check bounds: if (idx >= pop_size) return;
+✅ Chromosome pointer: T* chromosome = population + idx * chrom_len
+✅ CPU fallback must have identical logic to GPU kernel
+✅ Handle GPU allocation failures gracefully
+✅ Clean up GPU memory in destructor
+
+GPU COMPATIBLE OPERATIONS:
+--------------------------
+✅ DO use: Simple arithmetic (+, -, *, /)
+✅ DO use: Math functions (sqrt, cos, sin, exp, log, pow)
+✅ DO use: Simple loops and conditionals
+✅ DO use: Local arrays (max size ~128)
+
+❌ AVOID: Dynamic memory allocation inside kernel
+❌ AVOID: Recursive functions
+❌ AVOID: Complex exception handling
+❌ AVOID: this-> prefix in lambdas
+
+================================================================================
+CRITICAL CONSTRUCTOR PATTERNS
+================================================================================
+
+The BRKGAConfig base class has TWO constructor forms:
+
+1. SINGLE COMPONENT (most common, use for 90% of problems):
+   BRKGAConfig<T>(chromosome_length)
+
+2. MULTI-COMPONENT (optional, for separate evolution rates):
+   BRKGAConfig<T>({length1, length2, ...})
+
+WHEN TO USE SINGLE VS MULTI-COMPONENT:
+---------------------------------------
+
+Use SINGLE component when:
+  ✅ All decision variables can share one chromosome
+  ✅ Problem can be encoded in continuous range [0,1]
+  ✅ Example: TSP (city order)
+  ✅ Example: Knapsack (item selection)
+  ✅ Example: TTP with 287 cities + 275 items = 562 genes in ONE component
+
+Use MULTI-COMPONENT only when:
+  ⚠️  You want SEPARATE evolution rates for different variable groups
+  ⚠️  Variables have fundamentally different semantics
+  ⚠️  Example: TSPJ with separate city tour and job assignment components
+
+EXAMPLES:
+---------
+✅ CORRECT:
+   BRKGAConfig<T>(52)                                    // Single component, 52 genes
+   BRKGAConfig<T>({static_cast<int>(w.size())})         // Single component with vector size
+   BRKGAConfig<T>({562})                                // Single component, 562 genes (TTP example)
+   BRKGAConfig<T>({50, 50})                             // Two components of 50 genes each
+
+❌ WRONG:
+   BRKGAConfig<T>(52, 1, 3)                             // NO! This constructor doesn't exist
+   BRKGAConfig<T>(52, num_objectives, num_constraints)  // NO! Wrong signature
+
+MOST PROBLEMS USE SINGLE COMPONENT. Multi-component is OPTIONAL!
+
+================================================================================
+CRITICAL FUNCTION SIGNATURES
+================================================================================
+
+ALL problem-specific functions MUST use Individual<T>&, NOT std::vector<T>&:
+
+1. FITNESS FUNCTION:
+   ✅ CORRECT:
+   this->fitness_function = [this](const Individual<T>& individual) -> T {
+       const auto& chromosome = individual.get_chromosome();
+       // ... calculate fitness using chromosome
+       return fitness_value;
+   };
+
+   ✅ CORRECT (calling helper methods WITHOUT this->):
+   this->fitness_function = [this](const Individual<T>& individual) -> T {
+       return calculate_fitness(individual);  // NO this-> prefix!
+   };
+
+   ❌ WRONG:
+   this->fitness_function = [this](const std::vector<T>& chromosome) -> T {
+       // NO! Wrong signature
+   };
+
+   ❌ WRONG:
+   return this->calculate_fitness(individual);  // NVCC ERROR! Don't use this->
+
+2. DECODER:
+   ✅ CORRECT:
+   this->decoder = [this](const Individual<T>& individual) -> std::vector<std::vector<T>> {
+       const auto& chromosome = individual.get_chromosome();
+       // ... decode chromosome to solution
+       return decoded_solution;
+   };
+
+3. COMPARATOR:
+   ✅ CORRECT:
+   this->comparator = [](T a, T b) -> bool { return a < b; };  // Minimization
+   this->comparator = [](T a, T b) -> bool { return a > b; };  // Maximization
+
+================================================================================
+COMPLETE WORKING EXAMPLE 1: KNAPSACK WITH GPU FITNESS
+================================================================================
+
+Problem: Select items to maximize value without exceeding capacity
+Encoding: Gene > 0.5 means item is selected
+Optimization: Maximization with penalty for exceeding capacity
+
+✅ THIS CODE COMPILES AND RUNS SUCCESSFULLY:
+
+```cpp
+#ifndef KNAPSACK_CONFIG_HPP
+#define KNAPSACK_CONFIG_HPP
+
+#include "../../brkga/core/config.hpp"
+#include <vector>
+#include <memory>
+#include <iostream>
+#include <cuda_runtime.h>
+
+// Forward declaration of GPU kernel
+template<typename T>
+__global__ void knapsack_fitness_kernel(T* population, T* fitness, T* weights, T* values,
+                                       T capacity, int pop_size, int chrom_len);
+
+template<typename T>
+class KnapsackConfig : public BRKGAConfig<T> {
+private:
+    std::vector<T> weights;
+    std::vector<T> values;
+    T capacity;
+
+    // GPU-specific members
+    T* d_weights;
+    T* d_values;
+    bool gpu_memory_allocated;
+    bool gpu_available;
+
+public:
+    KnapsackConfig(const std::vector<T>& w, const std::vector<T>& v, T cap)
+        : BRKGAConfig<T>({static_cast<int>(w.size())}),  // Single component
+          weights(w), values(v), capacity(cap),
+          d_weights(nullptr), d_values(nullptr),
+          gpu_memory_allocated(false), gpu_available(false) {
+
+        // CPU fallback fitness function
+        this->fitness_function = [this](const Individual<T>& individual) {
+            const auto& chromosome = individual.get_chromosome();
+            T total_weight = 0;
+            T total_value = 0;
+
+            for (size_t i = 0; i < chromosome.size(); i++) {
+                if (chromosome[i] > 0.5) {  // Item is selected
+                    total_weight += weights[i];
+                    total_value += values[i];
+                }
+            }
+
+            // Penalty for exceeding capacity
+            if (total_weight > capacity) {
+                T penalty = (total_weight - capacity) * 1000;
+                return total_value - penalty;
+            }
+
+            return total_value;
+        };
+
+        this->decoder = [this](const Individual<T>& individual) {
+            const auto& chromosome = individual.get_chromosome();
+            std::vector<std::vector<T>> result(1);
+            result[0].reserve(chromosome.size());
+
+            for (T gene : chromosome) {
+                result[0].push_back(gene > 0.5 ? T(1) : T(0));
+            }
+
+            return result;
+        };
+
+        this->comparator = [](T a, T b) { return a > b; };  // Maximization
+
+        this->threads_per_block = 256;
+        this->update_cuda_grid_size();
+
+        check_gpu_availability();
+    }
+
+    ~KnapsackConfig() {
+        cleanup_gpu_memory();
+    }
+
+    // GPU evaluation interface
+    bool has_gpu_evaluation() const override { return gpu_available; }
+
+    void evaluate_population_gpu(T* d_population, T* d_fitness,
+                                int pop_size, int chrom_len) override {
+        if (!gpu_available) return;
+
+        if (!gpu_memory_allocated) {
+            allocate_gpu_memory();
+        }
+
+        dim3 block(this->threads_per_block);
+        dim3 grid((pop_size + block.x - 1) / block.x);
+
+        knapsack_fitness_kernel<<<grid, block>>>(
+            d_population, d_fitness, d_weights, d_values,
+            capacity, pop_size, chrom_len
+        );
+
+        cudaDeviceSynchronize();
+    }
+
+private:
+    void check_gpu_availability() {
+        int device_count = 0;
+        cudaError_t error = cudaGetDeviceCount(&device_count);
+        gpu_available = (error == cudaSuccess && device_count > 0);
+    }
+
+    void allocate_gpu_memory() {
+        if (!gpu_available || gpu_memory_allocated) return;
+
+        int num_items = weights.size();
+
+        cudaError_t error = cudaMalloc(&d_weights, num_items * sizeof(T));
+        if (error != cudaSuccess) {
+            gpu_available = false;
+            return;
+        }
+
+        error = cudaMalloc(&d_values, num_items * sizeof(T));
+        if (error != cudaSuccess) {
+            cudaFree(d_weights);
+            gpu_available = false;
+            return;
+        }
+
+        cudaMemcpy(d_weights, weights.data(), num_items * sizeof(T), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_values, values.data(), num_items * sizeof(T), cudaMemcpyHostToDevice);
+
+        gpu_memory_allocated = true;
+    }
+
+    void cleanup_gpu_memory() {
+        if (gpu_memory_allocated) {
+            if (d_weights) cudaFree(d_weights);
+            if (d_values) cudaFree(d_values);
+            gpu_memory_allocated = false;
+        }
+    }
+
+public:
+    void print_solution(const Individual<T>& individual) const {
+        const auto& chromosome = individual.get_chromosome();
+        T total_weight = 0;
+        T total_value = 0;
+
+        std::cout << "Selected items: ";
+        for (size_t i = 0; i < chromosome.size(); i++) {
+            if (chromosome[i] > 0.5) {
+                std::cout << i << " ";
+                total_weight += weights[i];
+                total_value += values[i];
+            }
+        }
+        std::cout << "\nTotal value: " << total_value;
+        std::cout << "\nTotal weight: " << total_weight << "/" << capacity << "\n";
+    }
+
+    static std::unique_ptr<KnapsackConfig<T>> create_default() {
+        std::vector<T> w = {10, 20, 30};
+        std::vector<T> v = {60, 100, 120};
+        T cap = 50;
+        return std::make_unique<KnapsackConfig<T>>(w, v, cap);
+    }
+};
+
+// GPU kernel implementation
+template<typename T>
+__global__ void knapsack_fitness_kernel(T* population, T* fitness, T* weights, T* values,
+                                       T capacity, int pop_size, int chrom_len) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= pop_size) return;
+
+    T* chromosome = population + idx * chrom_len;
+
+    T total_weight = 0;
+    T total_value = 0;
+
+    for (int i = 0; i < chrom_len; i++) {
+        if (chromosome[i] > 0.5) {  // Item is selected
+            total_weight += weights[i];
+            total_value += values[i];
+        }
+    }
+
+    // Apply penalty if over capacity
+    if (total_weight > capacity) {
+        T penalty = (total_weight - capacity) * 1000;
+        fitness[idx] = total_value - penalty;
+    } else {
+        fitness[idx] = total_value;
+    }
+}
+
+#endif
+```
+
+TESTED SUCCESSFULLY:
+- Population: 500, Generations: 100
+- Final fitness: 1182 (converged correctly)
+- Used 8 GPUs in multi-GPU mode
+
+================================================================================
+COMPLETE WORKING EXAMPLE 2: JOB SCHEDULING WITH GPU FITNESS
+================================================================================
+
+Problem: Assign jobs to machines to minimize makespan
+Encoding: Gene value [0,1] mapped to machine index
+Optimization: Minimization (makespan = max machine load)
+
+✅ THIS CODE COMPILES AND RUNS SUCCESSFULLY:
+
+```cpp
+#ifndef JOB_SCHEDULING_CONFIG_HPP
+#define JOB_SCHEDULING_CONFIG_HPP
+
+#include "../../brkga/core/config.hpp"
+#include <vector>
+#include <memory>
+#include <algorithm>
+#include <iostream>
+#include <cuda_runtime.h>
+
+// Forward declaration of GPU kernel
+template<typename T>
+__global__ void job_scheduling_fitness_kernel(T* population, T* fitness, T* job_times,
+                                             int num_machines, int pop_size, int chrom_len);
+
+template<typename T>
+class JobSchedulingConfig : public BRKGAConfig<T> {
+private:
+    std::vector<T> job_times;
+    int num_machines;
+
+    // GPU-specific members
+    T* d_job_times;
+    bool gpu_memory_allocated;
+    bool gpu_available;
+
+public:
+    JobSchedulingConfig(const std::vector<T>& jobs, int machines)
+        : BRKGAConfig<T>({static_cast<int>(jobs.size())}),  // Single component
+          job_times(jobs), num_machines(machines),
+          d_job_times(nullptr),
+          gpu_memory_allocated(false), gpu_available(false) {
+
+        // CPU fallback fitness function
+        this->fitness_function = [this](const Individual<T>& individual) {
+            const auto& chromosome = individual.get_chromosome();
+
+            std::vector<T> machine_load(num_machines, 0);
+
+            for (size_t i = 0; i < chromosome.size(); i++) {
+                int machine = static_cast<int>(chromosome[i] * num_machines);
+                if (machine >= num_machines) machine = num_machines - 1;
+
+                machine_load[machine] += job_times[i];
+            }
+
+            return *std::max_element(machine_load.begin(), machine_load.end());
+        };
+
+        this->decoder = [this](const Individual<T>& individual) {
+            const auto& chromosome = individual.get_chromosome();
+            std::vector<std::vector<T>> result(1);
+            result[0].reserve(chromosome.size());
+
+            for (T gene : chromosome) {
+                int machine = static_cast<int>(gene * num_machines);
+                if (machine >= num_machines) machine = num_machines - 1;
+                result[0].push_back(static_cast<T>(machine));
+            }
+
+            return result;
+        };
+
+        this->comparator = [](T a, T b) { return a < b; };  // Minimization
+
+        this->threads_per_block = 256;
+        this->update_cuda_grid_size();
+
+        check_gpu_availability();
+    }
+
+    ~JobSchedulingConfig() {
+        cleanup_gpu_memory();
+    }
+
+    bool has_gpu_evaluation() const override { return gpu_available; }
+
+    void evaluate_population_gpu(T* d_population, T* d_fitness,
+                                int pop_size, int chrom_len) override {
+        if (!gpu_available) return;
+
+        if (!gpu_memory_allocated) {
+            allocate_gpu_memory();
+        }
+
+        dim3 block(this->threads_per_block);
+        dim3 grid((pop_size + block.x - 1) / block.x);
+
+        job_scheduling_fitness_kernel<<<grid, block>>>(
+            d_population, d_fitness, d_job_times,
+            num_machines, pop_size, chrom_len
+        );
+
+        cudaDeviceSynchronize();
+    }
+
+private:
+    void check_gpu_availability() {
+        int device_count = 0;
+        cudaError_t error = cudaGetDeviceCount(&device_count);
+        gpu_available = (error == cudaSuccess && device_count > 0);
+    }
+
+    void allocate_gpu_memory() {
+        if (!gpu_available || gpu_memory_allocated) return;
+
+        int num_jobs = job_times.size();
+        cudaError_t error = cudaMalloc(&d_job_times, num_jobs * sizeof(T));
+
+        if (error != cudaSuccess) {
+            gpu_available = false;
+            return;
+        }
+
+        cudaMemcpy(d_job_times, job_times.data(), num_jobs * sizeof(T), cudaMemcpyHostToDevice);
+        gpu_memory_allocated = true;
+    }
+
+    void cleanup_gpu_memory() {
+        if (gpu_memory_allocated && d_job_times) {
+            cudaFree(d_job_times);
+            gpu_memory_allocated = false;
+        }
+    }
+
+public:
+    void print_solution(const Individual<T>& individual) const {
+        const auto& chromosome = individual.get_chromosome();
+
+        std::vector<T> machine_load(num_machines, 0);
+        std::vector<std::vector<int>> machine_jobs(num_machines);
+
+        for (size_t i = 0; i < chromosome.size(); i++) {
+            int machine = static_cast<int>(chromosome[i] * num_machines);
+            if (machine >= num_machines) machine = num_machines - 1;
+
+            machine_load[machine] += job_times[i];
+            machine_jobs[machine].push_back(i);
+        }
+
+        T makespan = *std::max_element(machine_load.begin(), machine_load.end());
+
+        std::cout << "\nMachine assignments:\n";
+        for (int m = 0; m < num_machines; m++) {
+            std::cout << "Machine " << m << " (load: " << machine_load[m] << "): ";
+            for (int job : machine_jobs[m]) {
+                std::cout << "J" << job << " ";
+            }
+            if (machine_load[m] == makespan) std::cout << "<- CRITICAL";
+            std::cout << "\n";
+        }
+        std::cout << "Makespan: " << makespan << "\n";
+    }
+};
+
+// GPU kernel implementation
+template<typename T>
+__global__ void job_scheduling_fitness_kernel(T* population, T* fitness, T* job_times,
+                                             int num_machines, int pop_size, int chrom_len) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= pop_size) return;
+
+    T* chromosome = population + idx * chrom_len;
+
+    // Local array for machine loads (limit to 32 machines for GPU)
+    T machine_load[32];
+    int actual_machines = min(num_machines, 32);
+
+    for (int m = 0; m < actual_machines; m++) {
+        machine_load[m] = 0;
+    }
+
+    for (int i = 0; i < chrom_len; i++) {
+        int machine = static_cast<int>(chromosome[i] * actual_machines);
+        if (machine >= actual_machines) machine = actual_machines - 1;
+
+        machine_load[machine] += job_times[i];
+    }
+
+    T makespan = machine_load[0];
+    for (int m = 1; m < actual_machines; m++) {
+        if (machine_load[m] > makespan) {
+            makespan = machine_load[m];
+        }
+    }
+
+    fitness[idx] = makespan;
+}
+
+#endif
+```
+
+TESTED SUCCESSFULLY:
+- Population: 500, Generations: 100
+- Final makespan: 270 (converged correctly)
+- Used 8 GPUs in multi-GPU mode
+
+================================================================================
+COMPLETE WORKING EXAMPLE 3: CONTINUOUS OPTIMIZATION WITH GPU FITNESS
+================================================================================
+
+Problem: Minimize Sphere or Rastrigin function
+Encoding: Genes [0,1] scaled to function domain [-5.12, 5.12]
+Optimization: Minimization (optimal = 0)
+
+✅ THIS CODE COMPILES AND RUNS SUCCESSFULLY:
+
+```cpp
+#ifndef CONTINUOUS_OPT_CONFIG_HPP
+#define CONTINUOUS_OPT_CONFIG_HPP
+
+#include "../../brkga/core/config.hpp"
+#include <vector>
+#include <memory>
+#include <iostream>
+#include <cmath>
+#include <cuda_runtime.h>
+
+// Forward declaration of GPU kernel
+template<typename T>
+__global__ void sphere_fitness_kernel(T* population, T* fitness, T lower_bound, T upper_bound,
+                                     int pop_size, int chrom_len);
+
+template<typename T>
+class SphereConfig : public BRKGAConfig<T> {
+private:
+    int num_variables;
+    T lower_bound;
+    T upper_bound;
+    bool gpu_available;
+
+public:
+    SphereConfig(int num_vars, T lower, T upper)
+        : BRKGAConfig<T>({num_vars}),  // Single component
+          num_variables(num_vars), lower_bound(lower), upper_bound(upper),
+          gpu_available(false) {
+
+        // CPU fallback fitness function
+        this->fitness_function = [this](const Individual<T>& individual) {
+            const auto& chromosome = individual.get_chromosome();
+
+            T sum = 0;
+            for (T gene : chromosome) {
+                T x = gene * (upper_bound - lower_bound) + lower_bound;
+                sum += x * x;
+            }
+            return sum;
+        };
+
+        this->decoder = [this](const Individual<T>& individual) {
+            const auto& chromosome = individual.get_chromosome();
+            std::vector<std::vector<T>> result(1);
+            result[0].reserve(chromosome.size());
+
+            for (T gene : chromosome) {
+                T value = gene * (upper_bound - lower_bound) + lower_bound;
+                result[0].push_back(value);
+            }
+
+            return result;
+        };
+
+        this->comparator = [](T a, T b) { return a < b; };  // Minimization
+
+        this->threads_per_block = 256;
+        this->update_cuda_grid_size();
+
+        check_gpu_availability();
+    }
+
+    bool has_gpu_evaluation() const override { return gpu_available; }
+
+    void evaluate_population_gpu(T* d_population, T* d_fitness,
+                                int pop_size, int chrom_len) override {
+        if (!gpu_available) return;
+
+        dim3 block(this->threads_per_block);
+        dim3 grid((pop_size + block.x - 1) / block.x);
+
+        sphere_fitness_kernel<<<grid, block>>>(
+            d_population, d_fitness, lower_bound, upper_bound, pop_size, chrom_len
+        );
+
+        cudaDeviceSynchronize();
+    }
+
+private:
+    void check_gpu_availability() {
+        int device_count = 0;
+        cudaError_t error = cudaGetDeviceCount(&device_count);
+        gpu_available = (error == cudaSuccess && device_count > 0);
+    }
+
+public:
+    void print_solution(const Individual<T>& individual) const {
+        const auto& chromosome = individual.get_chromosome();
+
+        std::cout << "\nFitness (optimal=0): " << individual.fitness << "\n";
+        std::cout << "Decision variables (first 10):\n";
+        for (size_t i = 0; i < std::min(size_t(10), chromosome.size()); i++) {
+            T value = chromosome[i] * (upper_bound - lower_bound) + lower_bound;
+            std::cout << "  x[" << i << "] = " << value << "\n";
+        }
+    }
+
+    static std::unique_ptr<SphereConfig<T>> create_default(int num_vars = 30) {
+        return std::make_unique<SphereConfig<T>>(num_vars, -5.12, 5.12);
+    }
+};
+
+// GPU kernel implementation
+template<typename T>
+__global__ void sphere_fitness_kernel(T* population, T* fitness, T lower_bound, T upper_bound,
+                                     int pop_size, int chrom_len) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= pop_size) return;
+
+    T* chromosome = population + idx * chrom_len;
+
+    T sum = 0;
+    for (int i = 0; i < chrom_len; i++) {
+        T x = chromosome[i] * (upper_bound - lower_bound) + lower_bound;
+        sum += x * x;
+    }
+
+    fitness[idx] = sum;
+}
+
+#endif
+```
+
+TESTED SUCCESSFULLY:
+- Population: 500, Generations: 200
+- Final fitness: 0.13 (near optimal, optimal=0)
+- Used 8 GPUs in multi-GPU mode
+
+================================================================================
+PROBLEM-SPECIFIC OUTPUT FORMATTING
+================================================================================
+
+CRITICAL: The print_solution() method MUST use terminology appropriate to the
+problem type. DO NOT default to "tour" or "route" for non-routing problems!
+
+Examples of problem-specific output:
+
+ROUTING PROBLEMS (TSP, VRP):
+  - Use: "Tour", "Route", "Path", "City sequence"
+  - Example: "Tour: 0 -> 5 -> 12 -> 3 -> 0"
+
+ASSIGNMENT PROBLEMS:
+  - Use: "Assignment", "Allocation", "Mapping"
+  - Example: "Job assignments: [2, 0, 1, 3]"
+
+OPTIMIZATION BENCHMARKS (ZDT, DTLZ, Sphere, Rastrigin):
+  - Use: "Decision variables", "Solution vector", "Variables"
+  - Example: "Decision variables: x[0]=0.523, x[1]=0.891, ..."
+  - DO NOT use "Tour" - these are mathematical optimization problems!
+
+SCHEDULING PROBLEMS:
+  - Use: "Schedule", "Sequence", "Order", "Makespan"
+  - Example: "Task sequence: [T1, T3, T2, T4]"
+
+PACKING/SELECTION PROBLEMS (Knapsack):
+  - Use: "Selected items", "Packed items", "Selection"
+  - Example: "Selected items: 2, 5, 7, 12"
+
+GRAPH PROBLEMS (Coloring, Clique):
+  - Use: "Colors", "Nodes", "Edges"
+  - Example: "Node colors: [R, G, B, R, G]"
+
+================================================================================
+DATA FILE PARSING - CRITICAL RULES
+================================================================================
+
+NEVER hardcode chromosome length in constructor!
+ALWAYS calculate it from file contents using a helper method.
+
+CORRECT APPROACH:
+1. Create static helper method to calculate chromosome length from file
+2. Call helper in base constructor initializer
+3. Parse files in constructor body
+4. Infer dimensions from ACTUAL parsed data
+
+Example showing correct pattern with helper method:
+
+```cpp
+template<typename T>
+class TTPConfig : public BRKGAConfig<T> {
+private:
+    int num_cities;
+    int num_items;
+
+    // HELPER METHOD: Calculate chromosome length from file
+    static int calculate_chromosome_length(const std::string& filename) {
+        std::ifstream file(filename);
+        if (!file.is_open()) {
+            throw std::runtime_error("Cannot open file: " + filename);
+        }
+
+        std::string line;
+        int cities = 0;
+        int items = 0;
+
+        while (std::getline(file, line)) {
+            if (line.find("DIMENSION:") != std::string::npos) {
+                std::stringstream ss(line);
+                std::string label;
+                ss >> label >> cities;
+            }
+            else if (line.find("NUMBER OF ITEMS:") != std::string::npos) {
+                std::stringstream ss(line);
+                std::string dummy1, dummy2, dummy3;
+                ss >> dummy1 >> dummy2 >> dummy3 >> items;
+            }
+        }
+
+        file.close();
+        return cities + items;  // ✅ Calculated from file!
+    }
+
+public:
+    // ✅ CORRECT: Calculate chromosome length from file
+    TTPConfig(const std::string& ttp_file)
+        : BRKGAConfig<T>(calculate_chromosome_length(ttp_file)) {
+
+        // Now parse full file for detailed data
+        parse_ttp_file(ttp_file);
+
+        // Store dimensions from parsing
+        num_cities = /* from parsing */;
+        num_items = /* from parsing */;
+
+        // Set up fitness function, decoder, etc.
+        this->fitness_function = [this](const Individual<T>& individual) {
+            return calculate_fitness(individual);
+        };
+
+        this->decoder = [this](const Individual<T>& individual) {
+            return decode_to_solution(individual);
+        };
+
+        this->comparator = [](T a, T b) { return a < b; };  // or a > b
+
+        this->threads_per_block = 256;
+        this->update_cuda_grid_size();
+
+        check_gpu_availability();
+    }
+
+    // ❌ WRONG: Hardcoded chromosome length
+    // TTPConfig(const std::string& ttp_file)
+    //     : BRKGAConfig<T>(562) {  // DON'T DO THIS!
+};
+```
+
+================================================================================
+MULTI-OBJECTIVE OPTIMIZATION
+================================================================================
+
+The framework provides TWO approaches for multi-objective problems:
+
+A) WEIGHTED SUM (Single Solution):
+   - Use fitness_function with weighted combination of objectives
+   - Returns: Single best solution
+   - Example: fitness = 0.5*distance + 0.5*time
+   - Use when: You want one solution with a specific tradeoff
+
+B) NSGA-II PARETO OPTIMIZATION (Pareto Front):
+   - Use objective_functions vector with separate objectives
+   - Returns: Pareto front of non-dominated solutions
+   - Automatically uses NSGA-II algorithm
+   - Use when: You want to explore the tradeoff space
+
+   ```cpp
+   this->objective_functions.resize(NUM_OBJECTIVES);
+
+   this->objective_functions[0] = [this](const Individual<T>& individual) -> T {
+       const auto& chromosome = individual.get_chromosome();
+       return objective_1_value;
+   };
+
+   this->objective_functions[1] = [this](const Individual<T>& individual) -> T {
+       const auto& chromosome = individual.get_chromosome();
+       return objective_2_value;
+   };
+   ```
+
+CRITICAL DECISION RULE:
+- When objective_functions is populated → NSGA-II is AUTOMATICALLY used
+- When only fitness_function is defined → Standard BRKGA is used
+- CANNOT use both fitness_function and objective_functions together
+- Default to NSGA-II (option B) for benchmark problems (ZDT, DTLZ, etc.)
+
+================================================================================
+LOCAL SEARCH INTEGRATION (HYBRID GENETIC ALGORITHM)
+================================================================================
+
+The framework provides OPTIONAL local search to improve solution quality. Local
+search applies problem-specific improvement moves to elite individuals.
+
+INCLUDE PATH FOR LOCAL SEARCH:
+#include "../../brkga/core/local_search.hpp"
+
+This is the CORRECT path - same directory as config.hpp.
+
+WHEN TO USE LOCAL SEARCH:
+-------------------------
+✅ Routing problems (TSP, VRP) → 2-opt, 3-opt, Or-opt
+✅ Scheduling problems → shift, swap, insert moves
+✅ Packing/selection (Knapsack) → add/swap item moves
+✅ Assignment problems → swap assignments
+❌ Continuous optimization (Sphere, Rastrigin) → Not beneficial
+❌ Very large problems (>10000 variables) → Too slow
+
+LOCAL SEARCH ARCHITECTURE:
+--------------------------
+1. LocalSearch<T> - Abstract base class for improvement operators
+2. LocalSearchManager<T> - Orchestrates multiple local search algorithms
+3. LocalSearchConfig<T> - Controls when and how local search is applied
+
+STRATEGIES (LocalSearchStrategy enum):
+- DISABLED: No local search (default)
+- BEST_ONLY: Apply only to best individual
+- ELITE_ONLY: Apply to all elite individuals (recommended)
+- RANDOM_SAMPLE: Apply to random 10% of population
+- ALL_INDIVIDUALS: Apply to entire population (expensive!)
+- STAGNATION_ONLY: Apply only when improvement stalls
+- ADAPTIVE: Increase frequency when stagnating
+
+TIMING (LocalSearchTiming enum):
+- POST_EVALUATION: After fitness evaluation (most common)
+- END_GENERATION: End of each generation
+- FINAL_POLISH: Only at the very end (for intensive final improvement)
+
+LOCAL SEARCH CONFIGURATION PATTERN:
+-----------------------------------
+
+```cpp
+// In your config constructor, AFTER setting fitness/decoder/comparator:
+
+void add_local_searches() {
+    // 1. Create your problem-specific local search operator
+    auto my_local_search = std::make_unique<MyLocalSearch>(problem_data);
+    this->add_local_search(std::move(my_local_search));
+
+    // 2. Configure local search behavior
+    LocalSearchConfig<T> ls_config;
+    ls_config.strategy = LocalSearchStrategy::ELITE_ONLY;  // Apply to elite
+    ls_config.frequency = 5;           // Every 5 generations
+    ls_config.probability = 0.8;       // 80% chance of application
+    ls_config.apply_to_best = true;    // Always apply to best solution
+    this->set_local_search_config(ls_config);
+}
+```
+
+IMPLEMENTING A LOCAL SEARCH OPERATOR:
+-------------------------------------
+
+Local search operators inherit from LocalSearch<T> and implement:
+- improve(): Main improvement logic
+- should_apply(): Whether to apply (usually return true, manager handles timing)
+- configure(): Parameter parsing
+- clone(): Factory method
+
+COMPLETE EXAMPLE - 2-OPT FOR TSP:
+---------------------------------
+
+```cpp
+class TwoOptTSP : public LocalSearch<T> {
+private:
+    const std::vector<std::vector<T>>& distance_matrix;
+    int num_cities;
+
+public:
+    TwoOptTSP(const std::vector<std::vector<T>>& distances, int cities)
+        : LocalSearch<T>("TSP-2opt"), distance_matrix(distances), num_cities(cities) {}
+
+    Individual<T> improve(const Individual<T>& individual) override {
+        Individual<T> best = individual;
+        auto tour = decode_tour(individual);
+
+        bool improved = true;
+        int iterations = 0;
+
+        while (improved && iterations < this->max_iterations) {
+            improved = false;
+
+            // 2-opt: try reversing segments
+            for (int i = 0; i < num_cities - 1 && !improved; i++) {
+                for (int j = i + 2; j < num_cities && !improved; j++) {
+                    // Calculate improvement from edge swap
+                    T old_dist = distance_matrix[tour[i]][tour[i+1]] +
+                                 distance_matrix[tour[j]][tour[(j+1) % num_cities]];
+                    T new_dist = distance_matrix[tour[i]][tour[j]] +
+                                 distance_matrix[tour[i+1]][tour[(j+1) % num_cities]];
+
+                    if (new_dist < old_dist - this->improvement_threshold) {
+                        std::reverse(tour.begin() + i + 1, tour.begin() + j + 1);
+                        T new_fitness = calculate_tour_length(tour);
+                        if (new_fitness < best.fitness) {
+                            best.set_fitness(new_fitness);
+                            improved = true;
+                        }
+                    }
+                }
+            }
+            iterations++;
+        }
+
+        if (best.fitness < individual.fitness) {
+            encode_tour(best, tour);
+        }
+        return best;
+    }
+
+    bool should_apply(int generation, const Individual<T>& individual,
+                     const std::vector<Individual<T>>& population) override {
+        return true;  // Manager handles timing
+    }
+
+    void configure(const std::map<std::string, std::string>& params) override {
+        this->parse_basic_config(params);
+    }
+
+    LocalSearch<T>* clone() const override {
+        return new TwoOptTSP(distance_matrix, num_cities);
+    }
+
+private:
+    // Helper: decode chromosome to tour
+    std::vector<int> decode_tour(const Individual<T>& individual) {
+        const auto& chromosome = individual.get_chromosome();
+        std::vector<std::pair<T, int>> keyed;
+        for (int i = 0; i < num_cities; i++) {
+            keyed.emplace_back(chromosome[i], i);
+        }
+        std::sort(keyed.begin(), keyed.end());
+        std::vector<int> tour;
+        for (const auto& p : keyed) tour.push_back(p.second);
+        return tour;
+    }
+
+    // Helper: encode tour back to chromosome
+    void encode_tour(Individual<T>& ind, const std::vector<int>& tour) {
+        auto& chromosome = ind.get_component(0);
+        for (int i = 0; i < num_cities; i++) {
+            chromosome[tour[i]] = static_cast<T>(i) / num_cities;
+        }
+        ind.reset_evaluation();
+    }
+
+    T calculate_tour_length(const std::vector<int>& tour) {
+        T total = 0;
+        for (int i = 0; i < num_cities; i++) {
+            total += distance_matrix[tour[i]][tour[(i+1) % num_cities]];
+        }
+        return total;
+    }
+};
+```
+
+COMPLETE EXAMPLE - SWAP FOR KNAPSACK (MAXIMIZATION):
+----------------------------------------------------
+
+```cpp
+class SwapKnapsack : public LocalSearch<T> {
+private:
+    const std::vector<T>& weights;
+    const std::vector<T>& values;
+    T capacity;
+
+public:
+    SwapKnapsack(const std::vector<T>& w, const std::vector<T>& v, T cap)
+        : LocalSearch<T>("Knapsack-Swap"), weights(w), values(v), capacity(cap) {}
+
+    Individual<T> improve(const Individual<T>& individual) override {
+        Individual<T> best = individual;
+        std::vector<bool> selection(weights.size());
+
+        // Decode current selection
+        const auto& chromosome = individual.get_chromosome();
+        T current_weight = 0, current_value = 0;
+        for (size_t i = 0; i < selection.size(); i++) {
+            selection[i] = chromosome[i] > 0.5;
+            if (selection[i]) {
+                current_weight += weights[i];
+                current_value += values[i];
+            }
+        }
+
+        bool improved = true;
+        while (improved && iterations < this->max_iterations) {
+            improved = false;
+
+            // Try adding unselected items
+            for (size_t i = 0; i < selection.size() && !improved; i++) {
+                if (!selection[i] && current_weight + weights[i] <= capacity) {
+                    selection[i] = true;
+                    current_weight += weights[i];
+                    current_value += values[i];
+                    improved = true;
+                }
+            }
+
+            // Try swapping: remove one, add another
+            if (!improved) {
+                for (size_t i = 0; i < selection.size() && !improved; i++) {
+                    if (selection[i]) {
+                        for (size_t j = 0; j < selection.size() && !improved; j++) {
+                            if (!selection[j] && i != j) {
+                                T new_weight = current_weight - weights[i] + weights[j];
+                                T new_value = current_value - values[i] + values[j];
+                                if (new_weight <= capacity && new_value > current_value) {
+                                    selection[i] = false;
+                                    selection[j] = true;
+                                    current_weight = new_weight;
+                                    current_value = new_value;
+                                    improved = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (current_value > best.fitness) {
+            encode_selection(best, selection);
+            best.set_fitness(current_value);
+        }
+        return best;
+    }
+
+    // ... implement should_apply, configure, clone as above ...
+
+protected:
+    bool is_better(T f1, T f2) const override {
+        return f1 > f2;  // MAXIMIZATION!
+    }
+};
+```
+
+LOCAL SEARCH CONFIGURATION RECOMMENDATIONS:
+-------------------------------------------
+| Problem Type | Operator        | Strategy    | Frequency |
+|--------------|-----------------|-------------|-----------|
+| TSP/VRP      | 2-opt, 3-opt    | ELITE_ONLY  | 5         |
+| Knapsack     | Add/Swap        | BEST_ONLY   | 10        |
+| Scheduling   | Shift/Swap      | ELITE_ONLY  | 5         |
+| Assignment   | Exchange        | ELITE_ONLY  | 10        |
+
+IMPORTANT NOTES:
+- Local search runs on CPU (not GPU accelerated)
+- Comparator is automatically inherited from config
+- Statistics are automatically tracked and reported
+- For maximization problems, override is_better() to return f1 > f2
+
+================================================================================
+KEY REQUIREMENTS SUMMARY
+================================================================================
+
+1. INCLUDE PATH: Must be exactly "../../brkga/core/config.hpp"
+
+2. GPU SUPPORT (REQUIRED):
+   - Implement has_gpu_evaluation() returning true if GPU available
+   - Implement evaluate_population_gpu() with CUDA kernel
+   - Implement CPU fallback fitness_function (identical logic)
+
+3. BASE CLASS CONSTRUCTOR:
+   - Use: BRKGAConfig<T>(length) for single component
+   - Use: BRKGAConfig<T>({len1, len2, ...}) for multi-component
+   - NEVER use: BRKGAConfig<T>(length, objectives, constraints)
+
+4. FUNCTION SIGNATURES:
+   - fitness_function: [this](const Individual<T>& ind) -> T
+   - decoder: [this](const Individual<T>& ind) -> std::vector<std::vector<T>>
+   - comparator: [](T a, T b) -> bool
+   - Access chromosome: individual.get_chromosome()
+
+5. METHOD CALLS:
+   - DON'T call chromosome_length() to validate - length is already set at construction
+   - NEVER use this->method() inside lambdas - use method() directly
+
+6. REQUIRED METHODS:
+   - print_solution(const Individual<T>& individual) const
+   - MUST use problem-specific terminology
+
+7. FACTORY METHODS:
+   - For configs with hardcoded data: create_default()
+   - For configs with data files: create_from_file(const std::string& path)
+   - Return type: std::unique_ptr<ConfigClass<T>>
+
+8. DECODER RETURN TYPE:
+   - MUST return: std::vector<std::vector<T>>
+   - First dimension: components (usually 1)
+   - Second dimension: decoded values
+
+9. DATA FILE PARSING:
+   - NEVER hardcode chromosome length
+   - Calculate it from file contents using helper method
+   - Call helper in base constructor initializer
+
+10. GPU KERNEL:
+    - Place at end of file after class definition
+    - Each thread processes ONE individual
+    - Always check: if (idx >= pop_size) return;
+    - Use simple operations compatible with CUDA
+
+11. LOCAL SEARCH (OPTIONAL BUT RECOMMENDED):
+    - Include local search for routing, scheduling, packing problems
+    - Create problem-specific LocalSearch<T> subclass
+    - Call add_local_searches() in constructor after GPU setup
+    - Configure with appropriate strategy (ELITE_ONLY recommended)
+    - Skip for continuous optimization (Sphere, Rastrigin, etc.)
+
+================================================================================
+END OF CONTEXT PACKAGE
+================================================================================
+
+Now generate code following these patterns exactly.

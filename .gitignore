@@ -1,0 +1,679 @@
+# ============================================================================
+# Main Project .gitignore
+# For BRKGA Framework + LLM Solver Project
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# C++ / CUDA Build Artifacts
+# ----------------------------------------------------------------------------
+# Object files
+*.o
+*.obj
+*.ko
+*.elf
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# CUDA
+*.cubin
+*.fatbin
+*.ptx
+*.cu.obj
+
+# Build directories
+build/
+brkga/build/
+bin/
+obj/
+lib/
+dist/
+*.build/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.cmake
+
+# Makefile
+Makefile.bak
+
+# ----------------------------------------------------------------------------
+# Python
+# ----------------------------------------------------------------------------
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# ----------------------------------------------------------------------------
+# LLM Solver Specific
+# ----------------------------------------------------------------------------
+# Generated configurations (temporary)
+llm_solver/generated/*.hpp
+llm_solver/generated/*.cu
+llm_solver/generated/*_solver
+llm_solver/generated/*.o
+
+# Keep the directory structure
+!llm_solver/generated/.gitkeep
+
+# Generated results
+llm_solver/results/*.txt
+llm_solver/results/*.json
+llm_solver/results/*.csv
+llm_solver/results/*.log
+
+# Keep the directory structure
+!llm_solver/results/.gitkeep
+
+# Data files (usually large)
+llm_solver/data/*.dat
+llm_solver/data/*.txt
+llm_solver/data/*.tsp
+llm_solver/data/*.vrp
+
+# Keep the directory structure
+!llm_solver/data/.gitkeep
+
+# Temporary solver cache
+llm_solver/.cache/
+
+# LLM solver logs
+llm_solver/*.log
+llm_solver/llm_solver.log
+
+# API keys (IMPORTANT: never commit these!)
+llm_solver/.env
+llm_solver/api_key.txt
+**/api_key.txt
+**/.api_key
+
+# ----------------------------------------------------------------------------
+# IDE / Editor Files
+# ----------------------------------------------------------------------------
+# VSCode
+.vscode/
+*.code-workspace
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.vcxproj*
+*.sln
+
+# CLion / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+cmake-build-*/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.*.sw[a-z]
+*.un~
+Session.vim
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+.\#*
+.projectile
+
+# Atom
+.atom/
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+
+# ----------------------------------------------------------------------------
+# OS Files
+# ----------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ----------------------------------------------------------------------------
+# Data & Results
+# ----------------------------------------------------------------------------
+# Solution files (large)
+solutions/*.sol
+solutions/*.txt
+solutions/*.json
+
+# Keep example solutions
+!solutions/example_*.sol
+
+# Data files
+data/*.dat
+data/*.tsp
+data/*.vrp
+data/*.scp
+data/*.graph
+
+# Keep small test data
+!data/test_*.dat
+!data/small_*.dat
+
+# Result files
+results/*.txt
+results/*.csv
+results/*.json
+
+# Keep summary results
+!results/summary.txt
+!results/benchmarks.csv
+
+# ----------------------------------------------------------------------------
+# Profiling & Debugging
+# ----------------------------------------------------------------------------
+# Profiling output
+*.prof
+*.nvprof
+*.nvvp
+gmon.out
+perf.data*
+*.gcov
+*.gcda
+*.gcno
+
+# Valgrind
+vgcore.*
+*.callgrind
+*.massif
+
+# GDB
+.gdb_history
+
+# CUDA profiling
+*.qdrep
+*.qdstrm
+
+# ----------------------------------------------------------------------------
+# Documentation
+# ----------------------------------------------------------------------------
+# Generated docs
+docs/html/
+docs/latex/
+docs/xml/
+doxygen/
+
+# Keep source docs
+!docs/*.md
+!docs/*.rst
+
+# ----------------------------------------------------------------------------
+# Backup & Temporary Files
+# ----------------------------------------------------------------------------
+*.bak
+*.backup
+*.tmp
+*.temp
+*~
+*.orig
+*.rej
+*.swp
+*.swo
+
+# Patch files
+*.patch
+*.diff
+
+# Archive files
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# ----------------------------------------------------------------------------
+# Package Managers
+# ----------------------------------------------------------------------------
+# Conan
+conanbuildinfo.*
+conaninfo.txt
+
+# vcpkg
+vcpkg_installed/
+
+# ----------------------------------------------------------------------------
+# Testing
+# ----------------------------------------------------------------------------
+# Test output
+test_results/
+test_reports/
+*.test
+test_*.out
+
+# Coverage
+coverage/
+*.coverage
+
+# ----------------------------------------------------------------------------
+# CI/CD
+# ----------------------------------------------------------------------------
+# GitHub Actions
+.github/workflows/*.bak
+
+# Jenkins
+.jenkins/
+
+# ----------------------------------------------------------------------------
+# Project Specific
+# ----------------------------------------------------------------------------
+# BRKGA specific
+brkga/solutions/*.solution
+brkga/logs/*.log
+
+# Custom configs (if you want to keep them private)
+# Uncomment the line below if needed
+# configs/private_*.hpp
+
+# Large datasets
+datasets/large/
+
+# Experiments
+experiments/temp/
+experiments/*.result
+
+# ----------------------------------------------------------------------------
+# Security & Credentials
+# ----------------------------------------------------------------------------
+# API keys and secrets
+*.key
+*.pem
+*.crt
+*.p12
+secrets.txt
+credentials.json
+.credentials
+.secret
+
+# Environment files with secrets
+.env.local
+.env.*.local
+.env.production
+
+# ----------------------------------------------------------------------------
+# Miscellaneous
+# ----------------------------------------------------------------------------
+# Core dumps (specific patterns to avoid matching brkga/core/)
+core.[0-9]*
+vgcore.*
+
+# Logs
+*.log
+logs/
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Node modules (if using any JS tools)
+node_modules/
+
+# Package lock files
+package-lock.json
+yarn.lock
+
+# ----------------------------------------------------------------------------
+# Keep These Important Files
+# ----------------------------------------------------------------------------
+# Make sure these are NOT ignored
+!.gitignore
+!.gitkeep
+!*.md
+!LICENSE
+!Makefile
+!*.yaml
+!*.yml
+
+# ----------------------------------------------------------------------------
+# Nested Git Repos & Excluded Directories
+# ----------------------------------------------------------------------------
+# Nested git directories
+brkga/.git/
+vrp_blazer_integration/.git/
+brkga_vrp_solver/.git/
+TSPJ_git/.git/
+
+# VRP Blazer related (excluded from this repo)
+vrp_blazer_integration/
+brkga_vrp_package/
+brkga_vrp_solver/
+brkga_vrp_solver_for_professor/
+csharp_integration/
+vrp_blazer_solver
+vrp_blazer_solver.cu
+Makefile.vrp_blazer
+
+# External code
+TSPJ_git/
+
+# Virtual environments
+venv/
+
+# Uploads and temp
+uploads/
+
+# Test binaries
+test_1m_brkga
+test_knapsack_gpu
+test_sphere_gpu
+test_job_sched_gpu
+
+# Development notes (scattered .md files in root)
+ACCESS_WEB_INTERFACE.md
+ADVANCED_CAPABILITIES_CONTEXT_UPDATE.md
+ALL_FILE_TYPES_SUPPORT.md
+ARCHITECTURE_MULTIPLE_FILES.md
+BACKEND_FILE_FORMAT_FIX.md
+BRANCH_MIGRATION_SUMMARY.md
+BUG_FIX_LENGTH1_ERROR.md
+CODEBASE_ARCHITECTURE.md
+COMPILATION_FIX_SUMMARY.md
+CONTEXT_UPDATES_SUMMARY.md
+CREATE_FROM_FILE_BUG_FIX.md
+DATA_FILE_GUIDE.md
+DECODER_OUTPUT_FIX.md
+ENHANCED_DIALOGUE_SUMMARY.md
+FITNESS_EXTRACTION_BUG_FIX.md
+FITNESS_FIX_SUMMARY.md
+FULL_OPTIMIZATION_ENHANCEMENT.md
+HARDCODED_CHROMOSOME_LENGTH_FIX.md
+HYPERPARAMETER_BUG_FIX.md
+HYPERPARAMETER_FEATURE_SUMMARY.md
+HYPERPARAMETER_QUICK_START.md
+HYPERPARAMETER_REFINEMENT_FIX.md
+HYPERPARAMETERS.md
+IMPLEMENTATION_SUMMARY.md
+INTERACTIVE_EXAMPLE.md
+KEY_CODE_SNIPPETS.md
+KNOWN_ISSUES.md
+MULTI_FILE_UPLOAD_SUMMARY.md
+MULTI_OBJECTIVE_APPROACHES_UPDATE.md
+MULTIPLE_DATA_FILES_GUIDE.md
+MULTIPLE_DATA_FILES_SUMMARY.md
+NVCC_FUNCTION_CALL_FIX.md
+PROBLEM_SPECIFIC_OUTPUT_UPDATE.md
+QUICK_ARCHITECTURE_REFERENCE.md
+QUICK_REFERENCE_MULTIPLE_FILES.md
+QUICK_START_DATA_FILES.md
+QUICK_START.md
+README_WEB.md
+SMART_FILE_MATCHING.md
+SOLUTION_DISPLAY_FIX.md
+THESIS_PROPOSAL.md
+TIMEOUT_SCALING_FIX.md
+TSP_FITNESS_EXPLANATION.md
+TSPJ_FITNESS_ISSUES.md
+USER_FILE_MAPPING.md
+WEB_INTERFACE_GUIDE.md
+WEB_INTERFACE_SUMMARY.md
+WEB_INTERFACE_WALKTHROUGH.md
+WEB_UI_HYPERPARAMETERS.md
+ZDT1_CONFIG_COMPARISON.md
+
+# Web app files (not core to BRKGA)
+web_app.py
+static/
+templates/
+start_web.sh
+requirements_web.txt
+
+# Test and debug scripts
+test_*.py
+debug_*.py
+clean_and_test.sh
+
+# Presentations and PDFs
+*.html
+*.pdf
+
+# Test CUDA files in root
+test_*.cu
+
+# Results and data in root
+results/
+test_data/
+
+# Misc test files in root
+test_gpu_configs.cpp
+test_server_access.sh
+example_tsp_problem.txt
+
+# Data files
+brkga/data/
+
+# Compiled binaries in brkga
+brkga/benchmark_tspj
+brkga/brkga_demo
+brkga/test_*
+brkga/verify_data
+brkga/*.png
+
+# Solutions and results
+brkga/solutions/
+brkga/pareto_solutions/
+brkga/*.txt
+llm_solver/results/*
+!llm_solver/results/.gitkeep
+
+# Generated code (keep only .gitkeep)
+llm_solver/generated/*
+!llm_solver/generated/.gitkeep
+
+# CSV benchmark results
+brkga/*.csv
+
+# Python scripts in brkga (visualization)
+brkga/*.py
+
+# ============================================================================
+# End of .gitignore
+# ============================================================================
