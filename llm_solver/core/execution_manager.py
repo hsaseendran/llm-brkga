@@ -313,14 +313,17 @@ class ExecutionManager:
 
         if is_multi_objective:
             # Multi-objective problem - use Pareto front
-            main_content = f"""#include "{os.path.abspath(config_path)}"
-#include "{os.path.join(self.framework_path, 'core/solver.hpp')}"
+            main_content = f"""// Standard library includes first
 #include <iostream>
 #include <fstream>
 #include <memory>
 #include <iomanip>
 #include <set>
 #include <cstdlib>
+
+// Project includes
+#include "{os.path.abspath(config_path)}"
+#include "{os.path.join(self.framework_path, 'core/solver.hpp')}"
 
 int main() {{
     try {{
@@ -414,13 +417,16 @@ int main() {{
 """
         else:
             # Single-objective problem - use best individual
-            main_content = f"""#include "{os.path.abspath(config_path)}"
-#include "{os.path.join(self.framework_path, 'core/solver.hpp')}"
+            main_content = f"""// Standard library includes first
 #include <iostream>
 #include <fstream>
 #include <memory>
 #include <iomanip>
 #include <cstdlib>
+
+// Project includes
+#include "{os.path.abspath(config_path)}"
+#include "{os.path.join(self.framework_path, 'core/solver.hpp')}"
 
 int main() {{
     try {{
