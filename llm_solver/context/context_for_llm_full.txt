@@ -1039,68 +1039,20 @@ CRITICAL DECISION RULE:
 - Default to NSGA-II (option B) for benchmark problems (ZDT, DTLZ, etc.)
 
 ================================================================================
-LOCAL SEARCH INTEGRATION (HYBRID GENETIC ALGORITHM)
+LOCAL SEARCH - NOT SUPPORTED
 ================================================================================
 
-LOCAL SEARCH IS OPTIONAL - SKIP IT FOR SIMPLE PROBLEMS
--------------------------------------------------------
-For most problems, GPU evaluation alone provides excellent performance.
-Only implement local search for complex routing/scheduling problems where
-it provides significant benefit.
+DO NOT IMPLEMENT LOCAL SEARCH IN GENERATED CODE.
 
-WHEN TO USE LOCAL SEARCH:
--------------------------
-✅ Routing problems (TSP, VRP) → 2-opt improvements
-✅ Scheduling problems → swap/shift moves
-❌ Continuous optimization (Sphere, Rastrigin) → Not beneficial
-❌ Simple problems → GPU evaluation is sufficient
-❌ First implementation → Get basic solver working first
+The following are FORBIDDEN and will cause compilation errors:
+- #include "local_search.hpp"
+- class MyLocalSearch : public LocalSearch<T>
+- add_local_search()
+- set_local_search_config()
+- LocalSearchConfig, LocalSearchStrategy, LocalSearchTiming
 
-LOCAL SEARCH API IN BRKGAConfig:
---------------------------------
-To enable local search, override these methods in your config class:
-
-```cpp
-// 1. Indicate that local search is available
-bool has_local_search() const override {
-    return true;
-}
-
-// 2. Implement GPU-based local search
-int apply_local_search_gpu(
-    T* d_population,           // Population on GPU
-    T* d_backup,               // Backup buffer for restoration
-    T* d_fitness,              // Fitness values
-    T* d_fitness_backup,       // Backup fitness for comparison
-    void* d_rng_states,        // curandState* for random numbers
-    int pop_size,              // Population size
-    int chrom_len,             // Chromosome length
-    int num_to_improve,        // Number of individuals to apply LS to
-    int num_moves              // Number of moves per individual
-) override {
-    // Implement your local search logic here
-    // Return number of improvements found
-    return 0;
-}
-```
-
-IMPORTANT: Do NOT use add_local_search() or set_local_search_config() -
-these methods do not exist in the base class. Use the override pattern above.
-
-CRITICAL WARNINGS FOR LOCAL SEARCH:
------------------------------------
-1. Do NOT #include "local_search.hpp" - it's not compatible with BRKGAConfig
-2. Do NOT create classes that inherit from LocalSearch<T>
-3. Do NOT use LocalSearchConfig<T>, LocalSearchStrategy, or LocalSearchTiming
-4. The ONLY way to add local search is by overriding has_local_search() and
-   apply_local_search_gpu() directly in your config class
-
-RECOMMENDATION FOR GENERATED CODE:
-----------------------------------
-Unless explicitly requested, DO NOT implement local search.
-The basic GPU fitness evaluation provides good results for most problems.
-If user asks for local search, implement it by overriding has_local_search()
-and apply_local_search_gpu() as shown in the CORRECT LOCAL SEARCH API section above.
+GPU fitness evaluation alone provides excellent performance for all problems.
+Local search is not integrated with the current BRKGA framework.
 
 ================================================================================
 KEY REQUIREMENTS SUMMARY
@@ -1153,12 +1105,12 @@ KEY REQUIREMENTS SUMMARY
     - Always check: if (idx >= pop_size) return;
     - Use simple operations compatible with CUDA
 
-11. LOCAL SEARCH (OPTIONAL - ONLY IF USER REQUESTS):
-    - Override has_local_search() to return true
-    - Override apply_local_search_gpu() with GPU-based local search logic
-    - DO NOT use add_local_search() or set_local_search_config() - they don't exist
-    - Skip for continuous optimization (Sphere, Rastrigin, etc.)
-    - Unless explicitly requested, DO NOT implement local search
+11. LOCAL SEARCH - NOT SUPPORTED:
+    - DO NOT implement any local search
+    - DO NOT include local_search.hpp
+    - DO NOT create LocalSearch subclasses
+    - DO NOT call add_local_search() or set_local_search_config()
+    - GPU fitness evaluation is sufficient for all problems
 
 ================================================================================
 END OF CONTEXT PACKAGE
