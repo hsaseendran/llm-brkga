@@ -1087,6 +1087,14 @@ int apply_local_search_gpu(
 IMPORTANT: Do NOT use add_local_search() or set_local_search_config() -
 these methods do not exist in the base class. Use the override pattern above.
 
+CRITICAL WARNINGS FOR LOCAL SEARCH:
+-----------------------------------
+1. Do NOT #include "local_search.hpp" - it's not compatible with BRKGAConfig
+2. Do NOT create classes that inherit from LocalSearch<T>
+3. Do NOT use LocalSearchConfig<T>, LocalSearchStrategy, or LocalSearchTiming
+4. The ONLY way to add local search is by overriding has_local_search() and
+   apply_local_search_gpu() directly in your config class
+
 RECOMMENDATION FOR GENERATED CODE:
 ----------------------------------
 Unless explicitly requested, DO NOT implement local search.
