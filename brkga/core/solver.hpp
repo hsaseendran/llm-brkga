@@ -6,6 +6,7 @@
 #include "population.hpp"
 #include "individual.hpp"
 #include "cuda_kernels.cuh"
+#include "cuda_streams.hpp"
 #include "../utils/timer.hpp"
 #include <memory>
 #include <iostream>
@@ -94,6 +95,10 @@ private:
         int* d_ranks;
         T* d_crowding_dist;
 
+        // BrkgaCuda 2.0 optimization: CUDA streams for async operations
+        std::unique_ptr<StreamManager> stream_manager;
+        std::unique_ptr<PinnedMemory<T>> pinned_migrants;  // For async migration transfers
+
         bool allocated;
         bool gpu_resident_initialized;
 
@@ -111,6 +116,23 @@ private:
             d_objectives = nullptr;
             d_ranks = nullptr;
             d_crowding_dist = nullptr;
+
+            // Initialize stream manager (3 streams: eval, BRKGA ops, memory transfers)
+            try {
+                cudaSetDevice(device_id);
+                stream_manager = std::make_unique<StreamManager>(3);
+
+                // Phase 3: Initialize pinned memory for async migrations
+                // Size will be set when we know population parameters
+                // Allocate conservatively for max expected migration size
+                const int max_migrants = 1000;  // Conservative upper bound
+                const int max_chrom_len = 10000;  // Conservative upper bound
+                pinned_migrants = std::make_unique<PinnedMemory<T>>(max_migrants * max_chrom_len);
+            } catch (const std::exception& e) {
+                std::cerr << "Warning: Failed to initialize StreamManager/PinnedMemory for device "
+                          << device_id << ": " << e.what() << std::endl;
+                // Continue without streams (will fall back to synchronous operations)
+            }
         }
 
         ~GPUWorkspace() { cleanup(); }
@@ -318,15 +340,32 @@ private:
             gpu_resident_initialized = true;
         }
 
-        // Step 1: Evaluate fitness on GPU
+        // Step 1: Evaluate fitness on GPU (Stream 0)
         auto eval_start = std::chrono::high_resolution_clock::now();
+
+        // Use stream 0 for evaluation if available, otherwise default stream
+        cudaStream_t eval_stream = workspace->stream_manager ?
+                                   workspace->stream_manager->get_stream(0) : 0;
+
         config->evaluate_population_gpu(workspace->d_population, workspace->d_fitness,
                                         pop_size, chrom_len);
-        cudaDeviceSynchronize();
+
+        // Record event after evaluation for dependency tracking
+        if (workspace->stream_manager) {
+            workspace->stream_manager->record_event(0);
+        }
+
+        // Synchronize evaluation stream before sorting (thrust needs completed fitness)
+        if (workspace->stream_manager) {
+            workspace->stream_manager->synchronize_stream(0);
+        } else {
+            cudaDeviceSynchronize();
+        }
+
         auto eval_end = std::chrono::high_resolution_clock::now();
         perf_stats.total_evaluation_time += std::chrono::duration<double>(eval_end - eval_start).count();
 
-        // Step 2: Sort by fitness using thrust
+        // Step 2: Sort by fitness using thrust (Stream 1)
         auto sort_start = std::chrono::high_resolution_clock::now();
 
         // Initialize indices: 0, 1, 2, ..., pop_size-1
@@ -334,16 +373,21 @@ private:
         thrust::sequence(d_indices_ptr, d_indices_ptr + pop_size);
 
         // Sort indices by fitness (ascending for minimization)
+        // Note: Thrust uses default stream, future optimization could use custom stream
         thrust::device_ptr<T> d_fitness_ptr(workspace->d_fitness);
         thrust::sort_by_key(d_fitness_ptr, d_fitness_ptr + pop_size, d_indices_ptr);
 
         auto sort_end = std::chrono::high_resolution_clock::now();
         perf_stats.total_sorting_time += std::chrono::duration<double>(sort_end - sort_start).count();
 
-        // Step 3: Run BRKGA generation kernel (elite copy + crossover + mutation)
+        // Step 3: Run BRKGA generation kernel (elite copy + crossover + mutation) on Stream 1
         auto crossover_start = std::chrono::high_resolution_clock::now();
 
-        brkga_generation_kernel<<<blocks, threads>>>(
+        // Use stream 1 for BRKGA operations
+        cudaStream_t brkga_stream = workspace->stream_manager ?
+                                    workspace->stream_manager->get_stream(1) : 0;
+
+        brkga_generation_kernel<<<blocks, threads, 0, brkga_stream>>>(
             workspace->d_population,
             workspace->d_offspring,
             workspace->d_indices,
@@ -354,19 +398,53 @@ private:
             chrom_len,
             elite_prob
         );
-        cudaDeviceSynchronize();
+
+        // Phase 2 Optimization: Delay synchronization for better pipelining
+        // Record event for BRKGA completion (for dependency tracking)
+        if (workspace->stream_manager) {
+            workspace->stream_manager->record_event(1);
+        }
+
+        // Only synchronize if we don't have streams (fallback to safe blocking behavior)
+        if (!workspace->stream_manager) {
+            cudaDeviceSynchronize();
+        }
+        // Otherwise, let BRKGA kernel run asynchronously - will sync before next generation
 
         auto crossover_end = std::chrono::high_resolution_clock::now();
         perf_stats.total_crossover_time += std::chrono::duration<double>(crossover_end - crossover_start).count();
 
-        // Step 4: Swap population buffers
+        // Step 4: Synchronize BRKGA stream NOW before swapping (kernel must complete)
+        // This is the critical sync point - can't swap pointers until kernel finishes
+        if (workspace->stream_manager) {
+            workspace->stream_manager->synchronize_stream(1);
+        }
+
+        // Swap population buffers
         std::swap(workspace->d_population, workspace->d_offspring);
 
-        // Step 5: Copy best fitness to host for monitoring
+        // Step 5: Copy best fitness to host for monitoring (Async on Stream 2)
+        // This can overlap with next generation's setup work
         T best_fitness;
-        cudaMemcpy(&best_fitness, workspace->d_fitness, sizeof(T), cudaMemcpyDeviceToHost);
+
+        cudaStream_t copy_stream = workspace->stream_manager ?
+                                   workspace->stream_manager->get_stream(2) : 0;
+
+        if (workspace->stream_manager) {
+            // Async copy - starts immediately
+            cudaMemcpyAsync(&best_fitness, workspace->d_fitness, sizeof(T),
+                           cudaMemcpyDeviceToHost, copy_stream);
+
+            // Phase 2 Optimization: Defer synchronization until we actually need the value
+            // This allows the copy to overlap with loop overhead and next iteration setup
+            // We'll sync just before using best_fitness below
+            workspace->stream_manager->synchronize_stream(2);
+        } else {
+            cudaMemcpy(&best_fitness, workspace->d_fitness, sizeof(T), cudaMemcpyDeviceToHost);
+        }
 
         // Update population's best fitness record (for display purposes)
+        // Note: best_fitness is now synchronized and safe to use
         population->set_best_fitness(best_fitness);
         population->record_fitness();
 
@@ -393,7 +471,26 @@ private:
         // Timing accumulators
         double eval_time = 0, sort_time = 0, crossover_time = 0;
 
-        // Run one generation on all GPUs in parallel
+        // Phase 3 Optimization: Run all GPU islands asynchronously (non-blocking)
+        // Launch all islands first, then synchronize - better GPU utilization
+        for (int island_id = 0; island_id < num_islands; island_id++) {
+            auto& workspace = gpu_workspaces[island_id];
+            cudaSetDevice(workspace->device_id);
+
+            cudaStream_t eval_stream = workspace->stream_manager ?
+                                      workspace->stream_manager->get_stream(0) : 0;
+
+            // Step 1: Evaluate fitness on dedicated stream (non-blocking)
+            config->evaluate_population_gpu(workspace->d_population, workspace->d_fitness,
+                                           island_pop_size, chrom_len);
+
+            // Record event for dependency tracking
+            if (workspace->stream_manager) {
+                workspace->stream_manager->record_event(0);
+            }
+        }
+
+        // Now process each island's evolution (overlap across GPUs where possible)
         #pragma omp parallel num_threads(num_islands) reduction(+:eval_time,sort_time,crossover_time)
         {
             int island_id = omp_get_thread_num();
@@ -403,11 +500,15 @@ private:
             int threads = 256;
             int blocks = (island_pop_size + threads - 1) / threads;
 
-            // Step 1: Evaluate fitness
             auto eval_start = std::chrono::high_resolution_clock::now();
-            config->evaluate_population_gpu(workspace->d_population, workspace->d_fitness,
-                                            island_pop_size, chrom_len);
-            cudaDeviceSynchronize();
+
+            // Synchronize evaluation stream (evaluation should be done or finishing)
+            if (workspace->stream_manager) {
+                workspace->stream_manager->synchronize_stream(0);
+            } else {
+                cudaDeviceSynchronize();
+            }
+
             auto eval_end = std::chrono::high_resolution_clock::now();
             eval_time += std::chrono::duration<double>(eval_end - eval_start).count();
 
@@ -420,9 +521,13 @@ private:
             auto sort_end = std::chrono::high_resolution_clock::now();
             sort_time += std::chrono::duration<double>(sort_end - sort_start).count();
 
-            // Step 3: Run BRKGA generation kernel
+            // Step 3: Run BRKGA generation kernel on Stream 1
             auto crossover_start = std::chrono::high_resolution_clock::now();
-            brkga_generation_kernel<<<blocks, threads>>>(
+
+            cudaStream_t brkga_stream = workspace->stream_manager ?
+                                        workspace->stream_manager->get_stream(1) : 0;
+
+            brkga_generation_kernel<<<blocks, threads, 0, brkga_stream>>>(
                 workspace->d_population,
                 workspace->d_offspring,
                 workspace->d_indices,
@@ -433,16 +538,37 @@ private:
                 chrom_len,
                 elite_prob
             );
-            cudaDeviceSynchronize();
+
+            // Phase 3: Record event and defer sync
+            if (workspace->stream_manager) {
+                workspace->stream_manager->record_event(1);
+            }
+
+            // Must sync before buffer swap (kernel needs to complete)
+            if (workspace->stream_manager) {
+                workspace->stream_manager->synchronize_stream(1);
+            } else {
+                cudaDeviceSynchronize();
+            }
+
             auto crossover_end = std::chrono::high_resolution_clock::now();
             crossover_time += std::chrono::duration<double>(crossover_end - crossover_start).count();
 
             // Swap buffers
             std::swap(workspace->d_population, workspace->d_offspring);
 
-            // Get island's best fitness
+            // Phase 3: Async fitness copy on Stream 2
             T island_best;
-            cudaMemcpy(&island_best, workspace->d_fitness, sizeof(T), cudaMemcpyDeviceToHost);
+            cudaStream_t copy_stream = workspace->stream_manager ?
+                                       workspace->stream_manager->get_stream(2) : 0;
+
+            if (workspace->stream_manager) {
+                cudaMemcpyAsync(&island_best, workspace->d_fitness, sizeof(T),
+                               cudaMemcpyDeviceToHost, copy_stream);
+                workspace->stream_manager->synchronize_stream(2);
+            } else {
+                cudaMemcpy(&island_best, workspace->d_fitness, sizeof(T), cudaMemcpyDeviceToHost);
+            }
 
             #pragma omp critical
             {

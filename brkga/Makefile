@@ -68,7 +68,7 @@ performance: directories $(TARGET)
 
 # Clean build artifacts
 clean:
-	rm -f $(TARGET) $(ZDT1_TARGET) $(MULTI_GPU_ZDT1) $(MULTI_TSP_TARGET)
+	rm -f $(TARGET) $(ZDT1_TARGET) $(MULTI_GPU_ZDT1) $(MULTI_TSP_TARGET) $(BASELINE_BENCHMARK) $(TEST_STREAMS) $(TEST_PHASE1_2) $(TEST_SEGMENTED_SORT) $(TEST_PHASE4_TSP) $(TEST_TRANSPOSE) $(TEST_INITIALIZE_LAYOUT) $(TEST_CROSSOVER_LAYOUT) $(TEST_MUTATION_LAYOUT) $(TEST_BRKGA_GEN_LAYOUT) $(TEST_REORDER_LAYOUT) $(TEST_GENE_MAJOR_BRKGA) $(BENCHMARK_ALL_PHASES)
 	rm -rf $(BUILD_DIR)
 	rm -f temp_main_*.cu
 	rm -f *.o
@@ -80,6 +80,159 @@ clean-all: clean
 	rm -f *_pareto_front.txt
 	rm -f *.png
 	@echo "Cleaned all generated files"
+
+# ==========================================
+# BrkgaCuda 2.0 Optimization Benchmarks
+# ==========================================
+
+BASELINE_BENCHMARK = benchmark_baseline
+TEST_STREAMS = test_streams
+TEST_PHASE1_2 = test_phase1_2
+TEST_SEGMENTED_SORT = test_segmented_sort
+TEST_PHASE4_TSP = test_phase4_tsp
+TEST_TRANSPOSE = test_transpose
+TEST_INITIALIZE_LAYOUT = test_initialize_layout
+TEST_CROSSOVER_LAYOUT = test_crossover_layout
+TEST_MUTATION_LAYOUT = test_mutation_layout
+TEST_BRKGA_GEN_LAYOUT = test_brkga_generation_layout
+TEST_REORDER_LAYOUT = test_reorder_layout
+TEST_GENE_MAJOR_BRKGA = test_gene_major_brkga
+BENCHMARK_ALL_PHASES = benchmark_all_phases
+
+$(BASELINE_BENCHMARK): benchmark_baseline.cu $(ALL_HEADERS)
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) benchmark_baseline.cu -o $(BASELINE_BENCHMARK) $(CUDA_LIBS)
+
+$(TEST_STREAMS): test_streams.cu core/cuda_streams.hpp
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) test_streams.cu -o $(TEST_STREAMS) $(CUDA_LIBS)
+
+$(TEST_PHASE1_2): test_phase1_2.cu $(ALL_HEADERS)
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) test_phase1_2.cu -o $(TEST_PHASE1_2) $(CUDA_LIBS)
+
+$(TEST_SEGMENTED_SORT): test_segmented_sort.cu utils/segmented_sort.hpp
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) test_segmented_sort.cu -o $(TEST_SEGMENTED_SORT) $(CUDA_LIBS)
+
+$(TEST_PHASE4_TSP): test_phase4_tsp.cu $(ALL_HEADERS)
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) test_phase4_tsp.cu -o $(TEST_PHASE4_TSP) $(CUDA_LIBS)
+
+$(TEST_TRANSPOSE): test_transpose.cu core/memory_layout.hpp
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) test_transpose.cu -o $(TEST_TRANSPOSE) $(CUDA_LIBS)
+
+$(TEST_INITIALIZE_LAYOUT): test_initialize_layout.cu core/cuda_kernels.cuh core/memory_layout.hpp
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) test_initialize_layout.cu -o $(TEST_INITIALIZE_LAYOUT) $(CUDA_LIBS)
+
+$(TEST_CROSSOVER_LAYOUT): test_crossover_layout.cu core/cuda_kernels.cuh core/memory_layout.hpp
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) test_crossover_layout.cu -o $(TEST_CROSSOVER_LAYOUT) $(CUDA_LIBS)
+
+$(TEST_MUTATION_LAYOUT): test_mutation_layout.cu core/cuda_kernels.cuh core/memory_layout.hpp
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) test_mutation_layout.cu -o $(TEST_MUTATION_LAYOUT) $(CUDA_LIBS)
+
+$(TEST_BRKGA_GEN_LAYOUT): test_brkga_generation_layout.cu core/cuda_kernels.cuh core/memory_layout.hpp
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) test_brkga_generation_layout.cu -o $(TEST_BRKGA_GEN_LAYOUT) $(CUDA_LIBS)
+
+$(TEST_REORDER_LAYOUT): test_reorder_layout.cu core/cuda_kernels.cuh core/memory_layout.hpp
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) test_reorder_layout.cu -o $(TEST_REORDER_LAYOUT) $(CUDA_LIBS)
+
+$(TEST_GENE_MAJOR_BRKGA): test_gene_major_brkga.cu core/gene_major_brkga.hpp core/cuda_kernels.cuh core/memory_layout.hpp
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) test_gene_major_brkga.cu -o $(TEST_GENE_MAJOR_BRKGA) $(CUDA_LIBS)
+
+$(BENCHMARK_ALL_PHASES): benchmark_all_phases.cu core/gene_major_brkga.hpp core/cuda_kernels.cuh core/memory_layout.hpp
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) benchmark_all_phases.cu -o $(BENCHMARK_ALL_PHASES) $(CUDA_LIBS)
+
+# Test stream infrastructure
+test-streams: $(TEST_STREAMS)
+	@echo "=== Testing CUDA Streams Infrastructure ==="
+	./$(TEST_STREAMS)
+
+# Test Phases 1 & 2 integration
+test-phase1-2: $(TEST_PHASE1_2)
+	@echo "=== Testing Phases 1 & 2 Stream-Based Solver ==="
+	./$(TEST_PHASE1_2)
+
+# Test Phase 4 segmented sorting
+test-segmented-sort: $(TEST_SEGMENTED_SORT)
+	@echo "=== Testing Phase 4 Segmented Sort ==="
+	./$(TEST_SEGMENTED_SORT)
+
+# Test Phase 4 with full TSP integration
+test-phase4-tsp: $(TEST_PHASE4_TSP)
+	@echo "=== Testing Phase 4 TSP Integration ==="
+	./$(TEST_PHASE4_TSP)
+
+# Test Phase 5 memory layout transpose
+test-transpose: $(TEST_TRANSPOSE)
+	@echo "=== Testing Phase 5 Memory Layout Transpose ==="
+	./$(TEST_TRANSPOSE)
+
+# Test Phase 5 Day 1: Initialize kernel
+test-initialize-layout: $(TEST_INITIALIZE_LAYOUT)
+	@echo "=== Testing Phase 5 Day 1: Initialize Kernel ==="
+	./$(TEST_INITIALIZE_LAYOUT)
+
+# Test Phase 5 Day 2: Crossover kernel
+test-crossover-layout: $(TEST_CROSSOVER_LAYOUT)
+	@echo "=== Testing Phase 5 Day 2: Crossover Kernel ==="
+	./$(TEST_CROSSOVER_LAYOUT)
+
+# Test Phase 5 Day 3: Mutation kernel
+test-mutation-layout: $(TEST_MUTATION_LAYOUT)
+	@echo "=== Testing Phase 5 Day 3: Mutation Kernel ==="
+	./$(TEST_MUTATION_LAYOUT)
+
+# Test Phase 5 Day 4: BRKGA generation kernel
+test-brkga-gen-layout: $(TEST_BRKGA_GEN_LAYOUT)
+	@echo "=== Testing Phase 5 Day 4: BRKGA Generation Kernel ==="
+	./$(TEST_BRKGA_GEN_LAYOUT)
+
+# Test Phase 5 Day 5: Reorder kernel
+test-reorder-layout: $(TEST_REORDER_LAYOUT)
+	@echo "=== Testing Phase 5 Day 5: Reorder Kernel ==="
+	./$(TEST_REORDER_LAYOUT)
+
+# Test Phase 5 Day 6: GeneLayoutBRKGA integration
+test-gene-major-brkga: $(TEST_GENE_MAJOR_BRKGA)
+	@echo "=== Testing Phase 5 Day 6: GeneLayoutBRKGA Integration ==="
+	./$(TEST_GENE_MAJOR_BRKGA)
+
+# Comprehensive benchmark: Baseline vs Gene-Major (Phases 1-5)
+benchmark-all-phases: $(BENCHMARK_ALL_PHASES)
+	@echo "=== BrkgaCuda 2.0 Comprehensive Benchmark ==="
+	./$(BENCHMARK_ALL_PHASES)
+
+# Run baseline benchmark (before optimizations)
+benchmark-baseline: $(BASELINE_BENCHMARK)
+	@echo "=== Running Baseline Performance Benchmark ==="
+	@echo "This will record current performance before optimizations"
+	./$(BASELINE_BENCHMARK) --pop 8000 --gens 500 --gpus 1 --mode baseline --knapsack-only
+
+# Run baseline with TSP (requires TSP file)
+benchmark-baseline-tsp: $(BASELINE_BENCHMARK)
+	@if [ -f pla85900.tsp ]; then \
+		./$(BASELINE_BENCHMARK) --tsp pla85900.tsp --pop 8000 --gens 500 --gpus 1 --mode baseline --tsp-only; \
+	else \
+		echo "Error: pla85900.tsp not found in current directory"; \
+		echo "Please provide a TSP file or run benchmark-baseline for synthetic problems"; \
+	fi
+
+# Compare optimizations (run after implementing each optimization)
+benchmark-streams: $(BASELINE_BENCHMARK)
+	@echo "=== Benchmarking with CUDA Streams ==="
+	./$(BASELINE_BENCHMARK) --pop 8000 --gens 500 --gpus 1 --mode streams --knapsack-only
+
+benchmark-coalesced: $(BASELINE_BENCHMARK)
+	@echo "=== Benchmarking with Coalesced Memory Access ==="
+	./$(BASELINE_BENCHMARK) --pop 8000 --gens 500 --gpus 1 --mode coalesced --knapsack-only
+
+benchmark-bbsegsort: $(BASELINE_BENCHMARK)
+	@if [ -f pla85900.tsp ]; then \
+		echo "=== Benchmarking with bb-segsort ==="; \
+		./$(BASELINE_BENCHMARK) --tsp pla85900.tsp --pop 8000 --gens 500 --gpus 1 --mode bbsegsort --tsp-only; \
+	else \
+		echo "bb-segsort benchmark requires TSP file"; \
+	fi
+
+benchmark-full: $(BASELINE_BENCHMARK)
+	@echo "=== Benchmarking with ALL Optimizations ==="
+	./$(BASELINE_BENCHMARK) --pop 8000 --gens 500 --gpus 1 --mode full --knapsack-only
 
 # ==========================================
 # Multi-Objective / NSGA-II Targets
@@ -359,6 +512,8 @@ help:
 
 # Declare phony targets
 .PHONY: all directories clean clean-all debug release performance \
+        test-streams test-phase1-2 test-segmented-sort test-phase4-tsp test-transpose test-initialize-layout test-crossover-layout test-mutation-layout test-brkga-gen-layout test-reorder-layout test-gene-major-brkga benchmark-all-phases benchmark-baseline benchmark-baseline-tsp benchmark-streams benchmark-coalesced \
+        benchmark-bbsegsort benchmark-full \
         run-zdt1 run-multi-gpu-zdt1 run-multi-gpu-zdt1-large \
         run-multi-tsp benchmark-multi-gpu \
         test-brkga test-nsga2 test-multi-gpu-nsga2 test-all-modes \
