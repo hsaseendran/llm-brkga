@@ -495,7 +495,13 @@ private:
         {
             int island_id = omp_get_thread_num();
             auto& workspace = gpu_workspaces[island_id];
-            cudaSetDevice(workspace->device_id);
+
+            // Set device and verify it was set correctly
+            cudaError_t set_err = cudaSetDevice(workspace->device_id);
+            if (set_err != cudaSuccess) {
+                // Skip this island if device is invalid
+                continue;
+            }
 
             int threads = 256;
             int blocks = (island_pop_size + threads - 1) / threads;
@@ -512,12 +518,21 @@ private:
             auto eval_end = std::chrono::high_resolution_clock::now();
             eval_time += std::chrono::duration<double>(eval_end - eval_start).count();
 
-            // Step 2: Sort by fitness using thrust
+            // Step 2: Sort by fitness using thrust (with exception handling)
             auto sort_start = std::chrono::high_resolution_clock::now();
-            thrust::device_ptr<int> d_indices_ptr(workspace->d_indices);
-            thrust::sequence(d_indices_ptr, d_indices_ptr + island_pop_size);
-            thrust::device_ptr<T> d_fitness_ptr(workspace->d_fitness);
-            thrust::sort_by_key(d_fitness_ptr, d_fitness_ptr + island_pop_size, d_indices_ptr);
+            try {
+                // Re-set device before thrust operations to ensure context is correct
+                cudaSetDevice(workspace->device_id);
+                thrust::device_ptr<int> d_indices_ptr(workspace->d_indices);
+                thrust::sequence(d_indices_ptr, d_indices_ptr + island_pop_size);
+                thrust::device_ptr<T> d_fitness_ptr(workspace->d_fitness);
+                thrust::sort_by_key(d_fitness_ptr, d_fitness_ptr + island_pop_size, d_indices_ptr);
+            } catch (const thrust::system_error& e) {
+                // If thrust fails, skip this island's evolution
+                std::cerr << "Warning: Thrust error on island " << island_id
+                          << " (device " << workspace->device_id << "): " << e.what() << std::endl;
+                continue;
+            }
             auto sort_end = std::chrono::high_resolution_clock::now();
             sort_time += std::chrono::duration<double>(sort_end - sort_start).count();
 
@@ -781,6 +796,24 @@ private:
         int num_islands = gpu_workspaces.size();
 
         if (use_multi_gpu) {
+            // Safety check: ensure island_best_fitness is populated
+            if (island_best_fitness.empty() || island_best_fitness.size() != static_cast<size_t>(num_islands)) {
+                // Fall back to population's best (already tracked on CPU)
+                return;
+            }
+
+            // Verify at least one workspace has valid GPU memory
+            bool any_valid = false;
+            for (const auto& ws : gpu_workspaces) {
+                if (ws && ws->allocated && ws->d_population && ws->d_fitness) {
+                    any_valid = true;
+                    break;
+                }
+            }
+            if (!any_valid) {
+                return;  // No valid GPU data, best is already tracked on CPU
+            }
+
             // Find which island has the global best
             int best_island = 0;
             T best_fitness = island_best_fitness[0];

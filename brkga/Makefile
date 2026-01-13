@@ -31,6 +31,7 @@ TARGET = brkga_unified
 ZDT1_TARGET = zdt1
 MULTI_GPU_ZDT1 = multi_gpu_zdt1
 MULTI_TSP_TARGET = multi_tsp
+RCMADP_TARGET = rcmadp_solver
 
 # Source files
 MAIN_SRC = main.cu
@@ -68,7 +69,7 @@ performance: directories $(TARGET)
 
 # Clean build artifacts
 clean:
-	rm -f $(TARGET) $(ZDT1_TARGET) $(MULTI_GPU_ZDT1) $(MULTI_TSP_TARGET) $(BASELINE_BENCHMARK) $(TEST_STREAMS) $(TEST_PHASE1_2) $(TEST_SEGMENTED_SORT) $(TEST_PHASE4_TSP) $(TEST_TRANSPOSE) $(TEST_INITIALIZE_LAYOUT) $(TEST_CROSSOVER_LAYOUT) $(TEST_MUTATION_LAYOUT) $(TEST_BRKGA_GEN_LAYOUT) $(TEST_REORDER_LAYOUT) $(TEST_GENE_MAJOR_BRKGA) $(BENCHMARK_ALL_PHASES)
+	rm -f $(TARGET) $(ZDT1_TARGET) $(MULTI_GPU_ZDT1) $(MULTI_TSP_TARGET) $(RCMADP_TARGET) $(BASELINE_BENCHMARK) $(TEST_STREAMS) $(TEST_PHASE1_2) $(TEST_SEGMENTED_SORT) $(TEST_PHASE4_TSP) $(TEST_TRANSPOSE) $(TEST_INITIALIZE_LAYOUT) $(TEST_CROSSOVER_LAYOUT) $(TEST_MUTATION_LAYOUT) $(TEST_BRKGA_GEN_LAYOUT) $(TEST_REORDER_LAYOUT) $(TEST_GENE_MAJOR_BRKGA) $(BENCHMARK_ALL_PHASES)
 	rm -rf $(BUILD_DIR)
 	rm -f temp_main_*.cu
 	rm -f *.o
@@ -273,6 +274,38 @@ run-multi-tsp: $(MULTI_TSP_TARGET)
 	else \
 		echo "Error: data/berlin52.tsp not found"; \
 		echo "Please download a TSPLIB instance or create sample data"; \
+	fi
+
+# ==========================================
+# RCMADP (Resource-Constrained Multi-Agent Drop-and-Pick)
+# ==========================================
+
+$(RCMADP_TARGET): $(EXAMPLES_DIR)/rcmadp_example.cu $(CONFIG_DIR)/rcmadp_config.hpp $(CORE_HEADERS)
+	$(NVCC) $(NVCC_FLAGS) $(INCLUDES) $(EXAMPLES_DIR)/rcmadp_example.cu -o $(RCMADP_TARGET) $(CUDA_LIBS)
+
+run-rcmadp: $(RCMADP_TARGET)
+	@if [ -f data/rcmadp_example/small_instance.tsp ]; then \
+		./$(RCMADP_TARGET) data/rcmadp_example/small_instance.tsp data/rcmadp_example/small_processing_times.txt 3 2; \
+	else \
+		echo "Error: RCMADP example data not found"; \
+		echo "Expected: data/rcmadp_example/small_instance.tsp and small_processing_times.txt"; \
+	fi
+
+run-rcmadp-custom: $(RCMADP_TARGET)
+	@echo "Usage: ./$(RCMADP_TARGET) <tsp_file> <proc_times_file> [agents] [resources_per_agent]"
+	@echo "   or: ./$(RCMADP_TARGET) --tspj <_TT.csv file> [agents] [resources_per_agent]"
+	@echo ""
+	@echo "Examples:"
+	@echo "  ./$(RCMADP_TARGET) berlin52.tsp processing_times.txt 4 3"
+	@echo "  ./$(RCMADP_TARGET) --tspj ../uploads/berlin52_TSPJ_TT.csv 4 3"
+
+# Run with berlin52 TSPJ data (4 agents, 3 resources each)
+run-rcmadp-berlin52: $(RCMADP_TARGET)
+	@if [ -f data/berlin52_TSPJ_TT.csv ]; then \
+		./$(RCMADP_TARGET) --tspj data/berlin52_TSPJ_TT.csv 4 3; \
+	else \
+		echo "Error: berlin52 TSPJ data not found"; \
+		echo "Expected: data/berlin52_TSPJ_TT.csv and data/berlin52_TSPJ_JT.csv"; \
 	fi
 
 # ==========================================
@@ -483,6 +516,11 @@ help:
 	@echo "  run-multi-gpu-zdt1-large  - Large population multi-GPU run"
 	@echo "  benchmark-multi-gpu       - Benchmark multi-GPU performance"
 	@echo ""
+	@echo "RCMADP (Resource-Constrained Multi-Agent Drop-and-Pick):"
+	@echo "  run-rcmadp                - Run RCMADP with sample instance"
+	@echo "  run-rcmadp-berlin52       - Run RCMADP with berlin52 TSPJ data"
+	@echo "  run-rcmadp-custom         - Show usage for custom instances"
+	@echo ""
 	@echo "Testing:"
 	@echo "  test-brkga               - Test single-objective BRKGA"
 	@echo "  test-nsga2               - Test multi-objective NSGA-II"
@@ -515,7 +553,7 @@ help:
         test-streams test-phase1-2 test-segmented-sort test-phase4-tsp test-transpose test-initialize-layout test-crossover-layout test-mutation-layout test-brkga-gen-layout test-reorder-layout test-gene-major-brkga benchmark-all-phases benchmark-baseline benchmark-baseline-tsp benchmark-streams benchmark-coalesced \
         benchmark-bbsegsort benchmark-full \
         run-zdt1 run-multi-gpu-zdt1 run-multi-gpu-zdt1-large \
-        run-multi-tsp benchmark-multi-gpu \
+        run-multi-tsp run-rcmadp run-rcmadp-berlin52 run-rcmadp-custom benchmark-multi-gpu \
         test-brkga test-nsga2 test-multi-gpu-nsga2 test-all-modes \
         benchmark-nsga2-scaling benchmark-gpu-comparison benchmark-comprehensive \
         analyze-pareto visualize-pareto \
