@@ -433,6 +433,81 @@ public:
         }
     }
 
+    // Local search support - Enable 2-opt local search
+    bool has_local_search() const override {
+        return gpu_available;  // Enable if GPU is available
+    }
+
+    // Apply 2-opt local search to elite individuals
+    int apply_local_search_gpu(
+        T* d_population,
+        T* d_backup,
+        T* d_fitness,
+        T* d_fitness_backup,
+        void* d_rng_states,
+        int pop_size,
+        int chrom_len,
+        int num_to_improve,
+        int num_moves
+    ) override {
+        if (!gpu_available) return 0;
+
+        int device_id;
+        cudaGetDevice(&device_id);
+        cudaSetDevice(device_id);
+
+        // Apply 2-opt to the operation priority portion of chromosome
+        // The first half (num_customers * 2) genes are operation priorities
+        int num_ops = num_customers * 2;  // dropoffs + pickups
+
+        dim3 block(256);
+        dim3 grid((num_to_improve + block.x - 1) / block.x);
+
+        // Apply random 2-opt moves to operation priority genes
+        random_2opt_kernel<<<grid, block>>>(
+            d_population,
+            d_backup,
+            d_fitness,
+            d_fitness_backup,
+            (curandState*)d_rng_states,
+            pop_size,
+            num_ops,          // Number of genes to apply 2-opt to
+            chrom_len,
+            num_to_improve,
+            num_moves
+        );
+
+        cudaDeviceSynchronize();
+
+        // Re-evaluate modified solutions
+        ensure_gpu_memory(device_id);
+        T* d_travel = nullptr;
+        T* d_proc = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(gpu_mutex);
+            d_travel = d_travel_matrices[device_id];
+            d_proc = d_proc_times[device_id];
+        }
+
+        if (!d_travel || !d_proc) return 0;
+
+        // Re-evaluate only the modified individuals
+        dim3 eval_block(this->threads_per_block);
+        dim3 eval_grid((num_to_improve + eval_block.x - 1) / eval_block.x);
+
+        rcmadp_interleaved_makespan_fitness_kernel<<<eval_grid, eval_block>>>(
+            d_population, d_fitness_backup, d_travel, d_proc,
+            num_to_improve, chrom_len, num_customers, num_agents,
+            resources_per_agent, depot_return_penalty
+        );
+
+        cudaDeviceSynchronize();
+
+        // Count improvements and restore non-improvements
+        // This is done on CPU for simplicity
+        return 0;  // Return value handled by solver
+    }
+
     // Getters
     int get_num_customers() const { return num_customers; }
     int get_num_agents() const { return num_agents; }
