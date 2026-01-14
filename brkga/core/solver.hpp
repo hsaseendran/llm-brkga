@@ -71,6 +71,9 @@ private:
     std::vector<T> island_best_fitness;  // Best fitness per island
     T global_best_fitness;
 
+    // Convergence history for reporting
+    std::vector<std::pair<int, T>> convergence_history;
+
     // Local Search Parameters
     int local_search_interval;        // Generations between local search
     int local_search_individuals;     // Number of elite individuals to apply LS to
@@ -495,99 +498,105 @@ private:
         {
             int island_id = omp_get_thread_num();
             auto& workspace = gpu_workspaces[island_id];
+            bool skip_island = false;
 
             // Set device and verify it was set correctly
             cudaError_t set_err = cudaSetDevice(workspace->device_id);
             if (set_err != cudaSuccess) {
                 // Skip this island if device is invalid
-                continue;
+                skip_island = true;
             }
 
-            int threads = 256;
-            int blocks = (island_pop_size + threads - 1) / threads;
+            if (!skip_island) {
+                int threads = 256;
+                int blocks = (island_pop_size + threads - 1) / threads;
 
-            auto eval_start = std::chrono::high_resolution_clock::now();
+                auto eval_start = std::chrono::high_resolution_clock::now();
 
-            // Synchronize evaluation stream (evaluation should be done or finishing)
-            if (workspace->stream_manager) {
-                workspace->stream_manager->synchronize_stream(0);
-            } else {
-                cudaDeviceSynchronize();
-            }
+                // Synchronize evaluation stream (evaluation should be done or finishing)
+                if (workspace->stream_manager) {
+                    workspace->stream_manager->synchronize_stream(0);
+                } else {
+                    cudaDeviceSynchronize();
+                }
 
-            auto eval_end = std::chrono::high_resolution_clock::now();
-            eval_time += std::chrono::duration<double>(eval_end - eval_start).count();
+                auto eval_end = std::chrono::high_resolution_clock::now();
+                eval_time += std::chrono::duration<double>(eval_end - eval_start).count();
 
-            // Step 2: Sort by fitness using thrust (with exception handling)
-            auto sort_start = std::chrono::high_resolution_clock::now();
-            try {
-                // Re-set device before thrust operations to ensure context is correct
-                cudaSetDevice(workspace->device_id);
-                thrust::device_ptr<int> d_indices_ptr(workspace->d_indices);
-                thrust::sequence(d_indices_ptr, d_indices_ptr + island_pop_size);
-                thrust::device_ptr<T> d_fitness_ptr(workspace->d_fitness);
-                thrust::sort_by_key(d_fitness_ptr, d_fitness_ptr + island_pop_size, d_indices_ptr);
-            } catch (const thrust::system_error& e) {
-                // If thrust fails, skip this island's evolution
-                std::cerr << "Warning: Thrust error on island " << island_id
-                          << " (device " << workspace->device_id << "): " << e.what() << std::endl;
-                continue;
-            }
-            auto sort_end = std::chrono::high_resolution_clock::now();
-            sort_time += std::chrono::duration<double>(sort_end - sort_start).count();
+                // Step 2: Sort by fitness using thrust (with exception handling)
+                auto sort_start = std::chrono::high_resolution_clock::now();
+                try {
+                    // Re-set device before thrust operations to ensure context is correct
+                    cudaSetDevice(workspace->device_id);
+                    thrust::device_ptr<int> d_indices_ptr(workspace->d_indices);
+                    thrust::sequence(d_indices_ptr, d_indices_ptr + island_pop_size);
+                    thrust::device_ptr<T> d_fitness_ptr(workspace->d_fitness);
+                    thrust::sort_by_key(d_fitness_ptr, d_fitness_ptr + island_pop_size, d_indices_ptr);
+                } catch (const thrust::system_error& e) {
+                    // If thrust fails, skip this island's evolution
+                    std::cerr << "Warning: Thrust error on island " << island_id
+                              << " (device " << workspace->device_id << "): " << e.what() << std::endl;
+                    skip_island = true;
+                }
 
-            // Step 3: Run BRKGA generation kernel on Stream 1
-            auto crossover_start = std::chrono::high_resolution_clock::now();
+                if (!skip_island) {
+                    auto sort_end = std::chrono::high_resolution_clock::now();
+                    sort_time += std::chrono::duration<double>(sort_end - sort_start).count();
 
-            cudaStream_t brkga_stream = workspace->stream_manager ?
-                                        workspace->stream_manager->get_stream(1) : 0;
+                    // Step 3: Run BRKGA generation kernel on Stream 1
+                    auto crossover_start = std::chrono::high_resolution_clock::now();
 
-            brkga_generation_kernel<<<blocks, threads, 0, brkga_stream>>>(
-                workspace->d_population,
-                workspace->d_offspring,
-                workspace->d_indices,
-                workspace->d_states,
-                island_pop_size,
-                island_elite_size,
-                island_mutant_size,
-                chrom_len,
-                elite_prob
-            );
+                    cudaStream_t brkga_stream = workspace->stream_manager ?
+                                                workspace->stream_manager->get_stream(1) : 0;
 
-            // Phase 3: Record event and defer sync
-            if (workspace->stream_manager) {
-                workspace->stream_manager->record_event(1);
-            }
+                    brkga_generation_kernel<<<blocks, threads, 0, brkga_stream>>>(
+                        workspace->d_population,
+                        workspace->d_offspring,
+                        workspace->d_indices,
+                        workspace->d_states,
+                        island_pop_size,
+                        island_elite_size,
+                        island_mutant_size,
+                        chrom_len,
+                        elite_prob
+                    );
 
-            // Must sync before buffer swap (kernel needs to complete)
-            if (workspace->stream_manager) {
-                workspace->stream_manager->synchronize_stream(1);
-            } else {
-                cudaDeviceSynchronize();
-            }
+                    // Phase 3: Record event and defer sync
+                    if (workspace->stream_manager) {
+                        workspace->stream_manager->record_event(1);
+                    }
 
-            auto crossover_end = std::chrono::high_resolution_clock::now();
-            crossover_time += std::chrono::duration<double>(crossover_end - crossover_start).count();
+                    // Must sync before buffer swap (kernel needs to complete)
+                    if (workspace->stream_manager) {
+                        workspace->stream_manager->synchronize_stream(1);
+                    } else {
+                        cudaDeviceSynchronize();
+                    }
 
-            // Swap buffers
-            std::swap(workspace->d_population, workspace->d_offspring);
+                    auto crossover_end = std::chrono::high_resolution_clock::now();
+                    crossover_time += std::chrono::duration<double>(crossover_end - crossover_start).count();
 
-            // Phase 3: Async fitness copy on Stream 2
-            T island_best;
-            cudaStream_t copy_stream = workspace->stream_manager ?
-                                       workspace->stream_manager->get_stream(2) : 0;
+                    // Swap buffers
+                    std::swap(workspace->d_population, workspace->d_offspring);
 
-            if (workspace->stream_manager) {
-                cudaMemcpyAsync(&island_best, workspace->d_fitness, sizeof(T),
-                               cudaMemcpyDeviceToHost, copy_stream);
-                workspace->stream_manager->synchronize_stream(2);
-            } else {
-                cudaMemcpy(&island_best, workspace->d_fitness, sizeof(T), cudaMemcpyDeviceToHost);
-            }
+                    // Phase 3: Async fitness copy on Stream 2
+                    T island_best;
+                    cudaStream_t copy_stream = workspace->stream_manager ?
+                                               workspace->stream_manager->get_stream(2) : 0;
 
-            #pragma omp critical
-            {
-                island_best_fitness[island_id] = island_best;
+                    if (workspace->stream_manager) {
+                        cudaMemcpyAsync(&island_best, workspace->d_fitness, sizeof(T),
+                                       cudaMemcpyDeviceToHost, copy_stream);
+                        workspace->stream_manager->synchronize_stream(2);
+                    } else {
+                        cudaMemcpy(&island_best, workspace->d_fitness, sizeof(T), cudaMemcpyDeviceToHost);
+                    }
+
+                    #pragma omp critical
+                    {
+                        island_best_fitness[island_id] = island_best;
+                    }
+                }
             }
         }
 
@@ -1682,10 +1691,19 @@ public:
         
         timer->start();
         initialize();
-        
+
+        // Clear and record initial convergence
+        convergence_history.clear();
+
         for (int gen = 0; gen < config->max_generations; gen++) {
             evolve_generation();
-            
+
+            // Track convergence at print intervals
+            if (gen % print_frequency == 0 || gen == config->max_generations - 1) {
+                T best_fit = population->get_best().fitness;
+                convergence_history.push_back({gen, best_fit});
+            }
+
             if (verbose && (gen % print_frequency == 0 || gen == config->max_generations - 1)) {
                 population->print_statistics(gen);
             }
@@ -1826,7 +1844,17 @@ public:
             std::cout << "Pareto front exported to: " << filename << std::endl;
         }
     }
-    
+
+    // Get convergence history for reporting
+    const std::vector<std::pair<int, T>>& get_convergence_history() const {
+        return convergence_history;
+    }
+
+    // Get elapsed time from timer
+    double get_elapsed_seconds() const {
+        return timer ? timer->elapsed_seconds() : 0.0;
+    }
+
     void benchmark_modes() {
         if (gpu_count < 2) {
             std::cout << "Multi-GPU benchmarking requires at least 2 GPUs" << std::endl;
